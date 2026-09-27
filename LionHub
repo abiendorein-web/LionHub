@@ -1,973 +1,1850 @@
-local Players           = game:GetService("Players")
-local TweenService      = game:GetService("TweenService")
-local RunService        = game:GetService("RunService")
-local Stats             = game:GetService("Stats")
-local CoreGui           = game:GetService("CoreGui")
-local UserInputService  = game:GetService("UserInputService")
-
+local Players = game:GetService("Players")
+local TweenService = game:GetService("TweenService")
+local RunService = game:GetService("RunService")
+local StatsService = game:GetService("Stats")
+local CoreGuiService = game:GetService("CoreGui")
+local UserInput = game:GetService("UserInputService")
+local HttpService = game:GetService("HttpService")
+local SoundService = game:GetService("SoundService")
 local LocalPlayer = Players.LocalPlayer
+local VERSION = "8.1"
 
-if CoreGui:FindFirstChild("LionHubUI") then
-    CoreGui.LionHubUI:Destroy()
+local SoundIds = {
+    click = "rbxassetid://6895079853",
+    execute = "rbxassetid://6895080297",
+    success = "rbxassetid://6895080520",
+    fail = "rbxassetid://6895080727",
+    keyWarn = "rbxassetid://6895080437",
+    tabSwap = "rbxassetid://6895080440",
+    favorite = "rbxassetid://6895080450",
+    toast = "rbxassetid://6895080460",
+    lofi = "rbxassetid://140256481202851"
+}
+
+local soundEnabled = true
+local masterVolume = 0.5
+
+local function playSound(name, volume)
+    if not soundEnabled or not SoundIds[name] then return end
+    pcall(function()
+        local s = Instance.new("Sound")
+        s.SoundId = SoundIds[name]
+        s.Volume = (volume or 0.6) * masterVolume
+        s.Parent = SoundService
+        s:Play()
+        game:GetService("Debris"):AddItem(s, 5)
+    end)
 end
 
-local ScreenGui = Instance.new("ScreenGui")
-ScreenGui.Name            = "LionHubUI"
-ScreenGui.ResetOnSpawn    = false
-ScreenGui.DisplayOrder    = 999
-ScreenGui.IgnoreGuiInset  = true
+local Colors = {
+    background = Color3.fromRGB(14,14,18),
+    sidebar = Color3.fromRGB(22,22,28),
+    content = Color3.fromRGB(18,18,24),
+    card = Color3.fromRGB(28,28,36),
+    white = Color3.fromRGB(255,255,255),
+    dim = Color3.fromRGB(150,150,165),
+    border = Color3.fromRGB(60,60,80),
+    yellow = Color3.fromRGB(255,215,0),
+    yellowBright = Color3.fromRGB(255,245,160),
+    green = Color3.fromRGB(80,235,120),
+    greenGlow = Color3.fromRGB(50,255,100),
+    red = Color3.fromRGB(235,60,60),
+    control = Color3.fromRGB(34,34,44),
+    controlHover = Color3.fromRGB(50,50,64),
+    tabInactive = Color3.fromRGB(26,26,34),
+    tabText = Color3.fromRGB(180,180,190),
+    cyan = Color3.fromRGB(60,220,235),
+    gold = Color3.fromRGB(255,190,40),
+    categoryHeader = Color3.fromRGB(100,100,120)
+}
 
-if syn and syn.protect_gui then
-    syn.protect_gui(ScreenGui)
-    ScreenGui.Parent = CoreGui
-elseif gethui then
-    ScreenGui.Parent = gethui()
-else
-    local ok = pcall(function() ScreenGui.Parent = CoreGui end)
-    if not ok then
-        ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+local function loadJson(path, default)
+    local ok, result
+    if writefile and readfile and isfile then
+        ok = pcall(function()
+            if isfile(path) then result = HttpService:JSONDecode(readfile(path)) end
+        end)
+    end
+    return (ok and result) or default or {}
+end
+
+local function saveJson(path, data)
+    if writefile then
+        pcall(function() writefile(path, HttpService:JSONEncode(data)) end)
     end
 end
 
-local C = {
-    MainBg       = Color3.fromRGB(14,  14,  18),
-    SidebarBg    = Color3.fromRGB(20,  20,  26),
-    ContentBg    = Color3.fromRGB(18,  18,  22),
-    CardBg       = Color3.fromRGB(26,  26,  34),
-    Yellow       = Color3.fromRGB(255, 215,  0),
-    YellowBright = Color3.fromRGB(255, 245, 160),
-    White        = Color3.fromRGB(255, 255, 255),
-    DimText      = Color3.fromRGB(150, 150, 165),
-    Border       = Color3.fromRGB(50,  50,  65),
-    CloseRed     = Color3.fromRGB(235,  60,  60),
-    GreenReady   = Color3.fromRGB(80,  235, 120),
-    GreenGlow    = Color3.fromRGB(50,  255, 100),
-    RedBusy      = Color3.fromRGB(255, 100, 100),
-    CtrlBg       = Color3.fromRGB(28,  28,  36),
-    CtrlHover    = Color3.fromRGB(48,  48,  60),
-    TabInactive  = Color3.fromRGB(24,  24,  30),
-    TabText      = Color3.fromRGB(180, 180, 190),
-}
-
-local TFast   = TweenInfo.new(0.18, Enum.EasingStyle.Quad,  Enum.EasingDirection.Out)
-local TSmooth = TweenInfo.new(0.45, Enum.EasingStyle.Quint, Enum.EasingDirection.Out)
-local TBounce = TweenInfo.new(0.55, Enum.EasingStyle.Back,  Enum.EasingDirection.Out)
-
-local function corner(parent, radius)
-    local uc = Instance.new("UICorner")
-    uc.CornerRadius = UDim.new(0, radius or 10)
-    uc.Parent = parent
-    return uc
-end
-
-local function stroke(parent, thickness, color)
-    local us = Instance.new("UIStroke")
-    us.Thickness            = thickness or 1
-    us.Color                = color or C.Border
-    us.ApplyStrokeMode      = Enum.ApplyStrokeMode.Border
-    us.Parent               = parent
-    return us
-end
-
-local function hoverScale(btn, baseSize, basePos, growPx)
-    growPx = growPx or 4
-    local half = growPx / 2
-    btn.MouseEnter:Connect(function()
-        TweenService:Create(btn, TFast, {
-            Size     = UDim2.new(baseSize.X.Scale, baseSize.X.Offset + growPx, baseSize.Y.Scale, baseSize.Y.Offset + growPx),
-            Position = UDim2.new(basePos.X.Scale, basePos.X.Offset - half, basePos.Y.Scale, basePos.Y.Offset - half),
-        }):Play()
-    end)
-    btn.MouseLeave:Connect(function()
-        TweenService:Create(btn, TFast, {Size = baseSize, Position = basePos}):Play()
-    end)
-    btn.MouseButton1Down:Connect(function()
-        TweenService:Create(btn, TFast, {
-            Size     = UDim2.new(baseSize.X.Scale, baseSize.X.Offset - 2, baseSize.Y.Scale, baseSize.Y.Offset - 2),
-            Position = UDim2.new(basePos.X.Scale, basePos.X.Offset + 1, basePos.Y.Scale, basePos.Y.Offset + 1),
-        }):Play()
-    end)
-    btn.MouseButton1Up:Connect(function()
-        TweenService:Create(btn, TFast, {Size = baseSize, Position = basePos}):Play()
-    end)
-end
-
-local WIN_W       = 540
-local WIN_H       = 400
-local HEADER_H    = 44
-local PAD         = 10
-local SIDEBAR_W   = 148
-local GAP         = 8
-
-local CONTENT_X   = PAD + SIDEBAR_W + GAP
-local CONTENT_W   = WIN_W - CONTENT_X - PAD
-local BODY_Y      = HEADER_H + PAD
-local BODY_H      = WIN_H - BODY_Y - PAD
-
-local MainFrame = Instance.new("Frame")
-MainFrame.Name                 = "MainFrame"
-MainFrame.AnchorPoint          = Vector2.new(0.5, 0.5)
-MainFrame.Position             = UDim2.new(0.5, 0, 0.5, 0)
-MainFrame.Size                 = UDim2.new(0, WIN_W, 0, WIN_H)
-MainFrame.BackgroundColor3     = C.MainBg
-MainFrame.BackgroundTransparency = 0.08
-MainFrame.BorderSizePixel      = 0
-MainFrame.ClipsDescendants     = true
-MainFrame.ZIndex               = 10
-MainFrame.Parent               = ScreenGui
-corner(MainFrame, 16)
-
-local GlowStroke = stroke(MainFrame, 2, C.White)
-local StrokeGrad = Instance.new("UIGradient")
-StrokeGrad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0.00, C.Yellow),
-    ColorSequenceKeypoint.new(0.25, C.White),
-    ColorSequenceKeypoint.new(0.50, C.Yellow),
-    ColorSequenceKeypoint.new(0.75, C.White),
-    ColorSequenceKeypoint.new(1.00, C.Yellow),
+local Settings = loadJson("LionHub_Settings.json", {
+    soundOn = true,
+    lofiOn = true,
+    backgroundOn = true,
+    performance = false,
+    floatX = 0.92,
+    floatY = 0.9,
+    tipsOn = true,
+    motionBlur = true
 })
-StrokeGrad.Rotation = 0
-StrokeGrad.Parent   = GlowStroke
 
-local pulseT = 0
+Settings.lofiOn = true
+
+local Favorites = loadJson("LionHub_Favorites.json", {})
+local History = loadJson("LionHub_History.json", {})
+
+soundEnabled = Settings.soundOn ~= false
+
+if CoreGuiService:FindFirstChild("LionHubUI") then CoreGuiService.LionHubUI:Destroy() end
+if CoreGuiService:FindFirstChild("LionHubFloat") then CoreGuiService.LionHubFloat:Destroy() end
+
+local FastTween = TweenInfo.new(0.18, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+local SmoothTween = TweenInfo.new(0.35, Enum.EasingStyle.Quad, Enum.EasingDirection.Out)
+
+local function addCorner(parent, radius)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(0, radius or 10)
+    c.Parent = parent
+    return c
+end
+
+local function addScaleCorner(parent, scale)
+    local c = Instance.new("UICorner")
+    c.CornerRadius = UDim.new(scale or 0.5, 0)
+    c.Parent = parent
+    return c
+end
+
+local function addStroke(parent, thickness, color)
+    local s = Instance.new("UIStroke")
+    s.Thickness = thickness or 1
+    s.Color = color or Colors.border
+    s.ApplyStrokeMode = Enum.ApplyStrokeMode.Border
+    s.Parent = parent
+    return s
+end
+
+local function addGradient(parent, points)
+    local g = Instance.new("UIGradient")
+    g.Color = ColorSequence.new(points)
+    g.Parent = parent
+    return g
+end
+
+local function getSafeParent()
+    if gethui then
+        local ok, h = pcall(gethui)
+        if ok and h then return h end
+    end
+    return CoreGuiService
+end
+
+local function isFavorite(name) return Favorites[name] == true end
+
+local function toggleFavorite(name)
+    if Favorites[name] then Favorites[name] = nil else Favorites[name] = true end
+    saveJson("LionHub_Favorites.json", Favorites)
+    playSound("favorite", 0.5)
+end
+
+local function addToHistory(name)
+    table.insert(History, 1, {name = name, time = os.time()})
+    while #History > 40 do table.remove(History) end
+    saveJson("LionHub_History.json", History)
+end
+
+local lofiSound, lofiTween = nil, nil
+
+local function startLofi()
+    if not Settings.lofiOn or not soundEnabled then return end
+    if lofiSound and lofiSound.Parent then return end
+    pcall(function()
+        lofiSound = Instance.new("Sound")
+        lofiSound.SoundId = SoundIds.lofi
+        lofiSound.Volume = 0
+        lofiSound.Looped = true
+        lofiSound.Parent = SoundService
+        lofiSound:Play()
+        if lofiTween then lofiTween:Cancel() end
+        lofiTween = TweenService:Create(lofiSound, TweenInfo.new(0.8), {Volume = 0.6 * masterVolume})
+        lofiTween:Play()
+    end)
+end
+
+local function stopLofi()
+    if not (lofiSound and lofiSound.Parent) then return end
+    pcall(function()
+        local current = lofiSound
+        lofiSound = nil
+        if lofiTween then lofiTween:Cancel() end
+        lofiTween = TweenService:Create(current, TweenInfo.new(0.6), {Volume = 0})
+        lofiTween:Play()
+        task.delay(0.7, function()
+            pcall(function() current:Stop() current:Destroy() end)
+        end)
+    end)
+end
+
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "LionHubUI"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.DisplayOrder = 999
+ScreenGui.IgnoreGuiInset = true
+
+if syn and syn.protect_gui then
+    pcall(function() syn.protect_gui(ScreenGui) end)
+end
+
+local parentOk, parentErr = pcall(function() ScreenGui.Parent = getSafeParent() end)
+if not parentOk or not ScreenGui.Parent then
+    warn("[LION HUB] Parent failed: " .. tostring(parentErr))
+    pcall(function() ScreenGui.Parent = LocalPlayer:WaitForChild("PlayerGui", 5) end)
+end
+if not ScreenGui.Parent then return end
+
+local WINDOW_W, WINDOW_H = 560, 460
+local PADDING = 8
+local HEADER_HEIGHT = 44
+local SIDEBAR_WIDTH = 150
+local GAP = 8
+local CONTENT_X = PADDING + SIDEBAR_WIDTH + GAP
+local CONTENT_W = WINDOW_W - CONTENT_X - PADDING
+local BODY_Y = HEADER_HEIGHT + PADDING
+local BODY_H = WINDOW_H - BODY_Y - PADDING
+
+local blurHolder = Instance.new("Frame", ScreenGui)
+blurHolder.Size = UDim2.new(1,0,1,0)
+blurHolder.BackgroundTransparency = 1
+blurHolder.ZIndex = 9
+blurHolder.Visible = false
+
+local ghostFrames = {}
+for i = 1, 2 do
+    local ghost = Instance.new("Frame", blurHolder)
+    ghost.AnchorPoint = Vector2.new(0.5, 0.5)
+    ghost.Position = UDim2.new(0.5, 0, 0.5, 0)
+    ghost.Size = UDim2.new(0, WINDOW_W, 0, WINDOW_H)
+    ghost.BackgroundColor3 = Colors.yellow
+    ghost.BackgroundTransparency = 0.86 + i * 0.02
+    ghost.BorderSizePixel = 0
+    ghost.ZIndex = 9 - i
+    addCorner(ghost, 16)
+    table.insert(ghostFrames, ghost)
+end
+
+local MainFrame = Instance.new("Frame", ScreenGui)
+MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
+MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+MainFrame.Size = UDim2.new(0, WINDOW_W, 0, WINDOW_H)
+MainFrame.BackgroundColor3 = Colors.background
+MainFrame.BackgroundTransparency = 1
+MainFrame.BorderSizePixel = 0
+MainFrame.ClipsDescendants = true
+MainFrame.ZIndex = 10
+addCorner(MainFrame, 16)
+TweenService:Create(MainFrame, SmoothTween, {BackgroundTransparency = 0.08}):Play()
+
+local outerGlow = addStroke(MainFrame, 5, Colors.white)
+local innerGlow = addStroke(MainFrame, 2, Colors.white)
+local outerGradient = addGradient(outerGlow, {
+    ColorSequenceKeypoint.new(0, Colors.yellow),
+    ColorSequenceKeypoint.new(0.25, Colors.white),
+    ColorSequenceKeypoint.new(0.5, Colors.yellow),
+    ColorSequenceKeypoint.new(0.75, Colors.white),
+    ColorSequenceKeypoint.new(1, Colors.yellow)
+})
+local innerGradient = addGradient(innerGlow, {
+    ColorSequenceKeypoint.new(0, Colors.white),
+    ColorSequenceKeypoint.new(0.5, Colors.yellow),
+    ColorSequenceKeypoint.new(1, Colors.white)
+})
+
 RunService.RenderStepped:Connect(function(dt)
-    if not (MainFrame and MainFrame.Parent) then return end
-    pulseT = pulseT + dt
-    StrokeGrad.Rotation = (StrokeGrad.Rotation + 70 * dt) % 360
-    GlowStroke.Transparency = 0.15 + (math.sin(pulseT * 3) + 1) * 0.1
-    GlowStroke.Thickness = 2 + (math.cos(pulseT * 2.5) + 1) * 0.5
+    if Settings.performance or not MainFrame.Parent then return end
+    outerGradient.Rotation = (outerGradient.Rotation + 140 * dt) % 360
+    innerGradient.Rotation = (innerGradient.Rotation - 90 * dt) % 360
+    outerGlow.Transparency = 0.3 + (math.sin(tick() * 2) + 1) * 0.2
+    innerGlow.Transparency = 0.1 + (math.cos(tick() * 2.5) + 1) * 0.15
 end)
 
-MainFrame.Size = UDim2.new(0, WIN_W - 80, 0, WIN_H - 60)
-TweenService:Create(MainFrame, TBounce, {Size = UDim2.new(0, WIN_W, 0, WIN_H)}):Play()
+local starHolder = Instance.new("Frame", MainFrame)
+starHolder.Size = UDim2.new(1,0,1,0)
+starHolder.BackgroundTransparency = 1
+starHolder.ClipsDescendants = true
+starHolder.ZIndex = 11
+addCorner(starHolder, 16)
 
-local dragging, dragInput, dragStart, startPos
+task.spawn(function()
+    for i = 1, 35 do
+        local dot = Instance.new("Frame", starHolder)
+        local size = math.random(1, 2)
+        dot.Size = UDim2.new(0, size, 0, size)
+        dot.Position = UDim2.new(math.random(), 0, math.random(), 0)
+        dot.BackgroundColor3 = Colors.white
+        dot.BackgroundTransparency = 0.55
+        dot.BorderSizePixel = 0
+        dot.ZIndex = 11
+        addCorner(dot, 99)
+    end
+end)
 
-local TopBar = Instance.new("Frame")
-TopBar.Name                  = "TopBar"
-TopBar.Position              = UDim2.new(0, 0, 0, 0)
-TopBar.Size                  = UDim2.new(1, 0, 0, HEADER_H)
-TopBar.BackgroundColor3      = Color3.fromRGB(16, 16, 20)
-TopBar.BackgroundTransparency = 0.0
-TopBar.BorderSizePixel       = 0
-TopBar.ZIndex                = 15
-TopBar.Parent                = MainFrame
-corner(TopBar, 16)
+task.spawn(function()
+    while ScreenGui.Parent do
+        if Settings.backgroundOn ~= false and not Settings.performance then
+            local isBig = math.random() < 0.15
+            local trailLength = isBig and math.random(140, 220) or math.random(60, 120)
+            local thickness = isBig and math.random(3, 4) or math.random(1, 2)
+            local star = Instance.new("Frame", starHolder)
+            star.Size = UDim2.new(0, trailLength, 0, thickness)
+            star.Rotation = 35
+            local tintChance = math.random()
+            local starColor = Colors.white
+            if tintChance < 0.15 then starColor = Color3.fromRGB(180, 220, 255)
+            elseif tintChance < 0.4 then starColor = Color3.fromRGB(255, 240, 180) end
+            star.BackgroundColor3 = starColor
+            star.BorderSizePixel = 0
+            star.ZIndex = 12
+            addCorner(star, 99)
+            local head = Instance.new("Frame", star)
+            head.AnchorPoint = Vector2.new(1, 0.5)
+            head.Position = UDim2.new(1, 0, 0.5, 0)
+            head.Size = UDim2.new(0, thickness + 4, 0, thickness + 4)
+            head.BackgroundColor3 = Colors.white
+            head.BorderSizePixel = 0
+            head.ZIndex = 13
+            addCorner(head, 99)
+            local headGlow = Instance.new("Frame", head)
+            headGlow.AnchorPoint = Vector2.new(0.5, 0.5)
+            headGlow.Position = UDim2.new(0.5, 0, 0.5, 0)
+            headGlow.Size = UDim2.new(2.5, 0, 2.5, 0)
+            headGlow.BackgroundColor3 = starColor
+            headGlow.BackgroundTransparency = 0.5
+            headGlow.BorderSizePixel = 0
+            headGlow.ZIndex = 12
+            addCorner(headGlow, 99)
+            local trailGradient = addGradient(star, {
+                ColorSequenceKeypoint.new(0, starColor),
+                ColorSequenceKeypoint.new(0.5, starColor),
+                ColorSequenceKeypoint.new(1, Colors.white)
+            })
+            trailGradient.Transparency = NumberSequence.new({
+                NumberSequenceKeypoint.new(0, 1),
+                NumberSequenceKeypoint.new(0.3, 0.7),
+                NumberSequenceKeypoint.new(0.75, 0.2),
+                NumberSequenceKeypoint.new(1, 0)
+            })
+            local startX = math.random(-150, WINDOW_W)
+            local startY = math.random(-80, 80)
+            star.Position = UDim2.new(0, startX, 0, startY)
+            local duration = isBig and math.random(18, 26) / 10 or math.random(9, 16) / 10
+            local distance = isBig and 400 or 250
+            local tween = TweenService:Create(star, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
+                Position = UDim2.new(0, startX + distance, 0, startY + distance * 0.8),
+                BackgroundTransparency = 1
+            })
+            tween:Play()
+            tween.Completed:Connect(function() star:Destroy() end)
+        end
+        task.wait(math.random(20, 70) / 100)
+    end
+end)
+
+local isDragging, dragInput, dragStart, dragStartPos
+
+local TopBar = Instance.new("Frame", MainFrame)
+TopBar.Size = UDim2.new(1, 0, 0, HEADER_HEIGHT)
+TopBar.BackgroundColor3 = Color3.fromRGB(18, 18, 24)
+TopBar.BackgroundTransparency = 0.15
+TopBar.BorderSizePixel = 0
+TopBar.ZIndex = 15
+addCorner(TopBar, 16)
 
 TopBar.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-    or input.UserInputType == Enum.UserInputType.Touch then
-        dragging  = true
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        isDragging = true
         dragStart = input.Position
-        startPos  = MainFrame.Position
+        dragStartPos = MainFrame.Position
+        if Settings.motionBlur ~= false and not Settings.performance then
+            blurHolder.Visible = true
+        end
         input.Changed:Connect(function()
             if input.UserInputState == Enum.UserInputState.End then
-                dragging = false
+                isDragging = false
+                blurHolder.Visible = false
             end
         end)
     end
 end)
 
 TopBar.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement
-    or input.UserInputType == Enum.UserInputType.Touch then
+    if input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch then
         dragInput = input
     end
 end)
 
-UserInputService.InputChanged:Connect(function(input)
-    if input == dragInput and dragging then
+UserInput.InputChanged:Connect(function(input)
+    if input == dragInput and isDragging then
         local delta = input.Position - dragStart
-        MainFrame.Position = UDim2.new(
-            startPos.X.Scale, startPos.X.Offset + delta.X,
-            startPos.Y.Scale, startPos.Y.Offset + delta.Y
-        )
-    end
-end)
-
-local TopBarSquare = Instance.new("Frame")
-TopBarSquare.Size                  = UDim2.new(1, 0, 0.5, 0)
-TopBarSquare.Position              = UDim2.new(0, 0, 0.5, 0)
-TopBarSquare.BackgroundColor3      = Color3.fromRGB(16, 16, 20)
-TopBarSquare.BorderSizePixel       = 0
-TopBarSquare.ZIndex                = 14
-TopBarSquare.Parent                = TopBar
-
-local HeaderLine = Instance.new("Frame")
-HeaderLine.Size             = UDim2.new(1, 0, 0, 1)
-HeaderLine.Position         = UDim2.new(0, 0, 1, -1)
-HeaderLine.BackgroundColor3 = C.Border
-HeaderLine.BorderSizePixel  = 0
-HeaderLine.ZIndex           = 16
-HeaderLine.Parent           = TopBar
-
-local Logo = Instance.new("ImageLabel")
-Logo.Position              = UDim2.new(0, 14, 0.5, -12)
-Logo.Size                  = UDim2.new(0, 24, 0, 24)
-Logo.BackgroundTransparency = 1
-Logo.Image                 = "rbxassetid://6026568227"
-Logo.ImageColor3           = C.Yellow
-Logo.ZIndex                = 17
-Logo.Parent                = TopBar
-
-local Title = Instance.new("TextLabel")
-Title.Position              = UDim2.new(0, 44, 0.5, -11)
-Title.Size                  = UDim2.new(0, 130, 0, 22)
-Title.BackgroundTransparency = 1
-Title.Font                  = Enum.Font.GothamBlack
-Title.Text                  = "LION HUB"
-Title.TextColor3            = C.White
-Title.TextSize              = 16
-Title.TextXAlignment        = Enum.TextXAlignment.Left
-Title.ZIndex                = 17
-Title.Parent                = TopBar
-
-local TitleGrad = Instance.new("UIGradient")
-TitleGrad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0.00, C.Yellow),
-    ColorSequenceKeypoint.new(0.25, C.White),
-    ColorSequenceKeypoint.new(0.50, C.Yellow),
-    ColorSequenceKeypoint.new(0.75, C.White),
-    ColorSequenceKeypoint.new(1.00, C.Yellow),
-})
-TitleGrad.Rotation = 0
-TitleGrad.Parent   = Title
-
-local titleT = 0
-RunService.RenderStepped:Connect(function(dt)
-    if not (Title and Title.Parent) then return end
-    titleT = titleT + dt
-    TitleGrad.Rotation = (TitleGrad.Rotation + 60 * dt) % 360
-    Title.TextTransparency = 0.05 + (math.sin(titleT * 2.2) + 1) * 0.05
-end)
-
-local StatsLabel = Instance.new("TextLabel")
-StatsLabel.Name                 = "StatsLabel"
-StatsLabel.AnchorPoint          = Vector2.new(1, 0.5)
-StatsLabel.Position             = UDim2.new(1, -100, 0.5, 0)
-StatsLabel.Size                 = UDim2.new(0, 120, 0, 20)
-StatsLabel.BackgroundTransparency = 1
-StatsLabel.Font                 = Enum.Font.GothamBold
-StatsLabel.Text                 = "Fps: 60  Ping: 0ms"
-StatsLabel.TextColor3           = C.YellowBright
-StatsLabel.TextSize             = 11
-StatsLabel.TextXAlignment       = Enum.TextXAlignment.Right
-StatsLabel.ZIndex               = 17
-StatsLabel.Parent               = TopBar
-
-local CloseBtn = Instance.new("TextButton")
-CloseBtn.Name                  = "CloseBtn"
-CloseBtn.AnchorPoint           = Vector2.new(1, 0.5)
-CloseBtn.Position              = UDim2.new(1, -12, 0.5, 0)
-CloseBtn.Size                  = UDim2.new(0, 24, 0, 24)
-CloseBtn.BackgroundColor3      = C.CtrlBg
-CloseBtn.BorderSizePixel       = 0
-CloseBtn.AutoButtonColor       = false
-CloseBtn.Text                  = ""
-CloseBtn.ZIndex                = 18
-CloseBtn.Parent                = TopBar
-corner(CloseBtn, 7)
-stroke(CloseBtn, 1, Color3.fromRGB(50, 50, 60))
-
-local CloseIcon = Instance.new("ImageLabel")
-CloseIcon.Name = "CloseIcon"
-CloseIcon.Size = UDim2.new(0, 12, 0, 12)
-CloseIcon.Position = UDim2.new(0.5, -6, 0.5, -6)
-CloseIcon.BackgroundTransparency = 1
-CloseIcon.Image = "rbxassetid://6031094678"
-CloseIcon.ImageColor3 = C.White
-CloseIcon.ZIndex = 19
-CloseIcon.Parent = CloseBtn
-
-local MinBtn = Instance.new("TextButton")
-MinBtn.Name                  = "MinBtn"
-MinBtn.AnchorPoint           = Vector2.new(1, 0.5)
-MinBtn.Position              = UDim2.new(1, -42, 0.5, 0)
-MinBtn.Size                  = UDim2.new(0, 24, 0, 24)
-MinBtn.BackgroundColor3      = C.CtrlBg
-MinBtn.BorderSizePixel       = 0
-MinBtn.AutoButtonColor       = false
-MinBtn.Text                  = ""
-MinBtn.ZIndex                = 18
-MinBtn.Parent                = TopBar
-corner(MinBtn, 7)
-stroke(MinBtn, 1, Color3.fromRGB(50, 50, 60))
-
-local MinIcon = Instance.new("ImageLabel")
-MinIcon.Name = "MinIcon"
-MinIcon.Size = UDim2.new(0, 12, 0, 12)
-MinIcon.Position = UDim2.new(0.5, -6, 0.5, -6)
-MinIcon.BackgroundTransparency = 1
-MinIcon.Image = "rbxassetid://6031090990"
-MinIcon.ImageColor3 = C.White
-MinIcon.ZIndex = 19
-MinIcon.Parent = MinBtn
-
-CloseBtn.MouseEnter:Connect(function()
-    TweenService:Create(CloseBtn, TFast, {BackgroundColor3 = C.CloseRed}):Play()
-end)
-CloseBtn.MouseLeave:Connect(function()
-    TweenService:Create(CloseBtn, TFast, {BackgroundColor3 = C.CtrlBg}):Play()
-end)
-CloseBtn.MouseButton1Click:Connect(function()
-    TweenService:Create(MainFrame, TFast, {
-        Size = UDim2.new(0, 0, 0, 0),
-        BackgroundTransparency = 1,
-    }):Play()
-    task.wait(0.25)
-    ScreenGui:Destroy()
-end)
-
-MinBtn.MouseEnter:Connect(function()
-    TweenService:Create(MinBtn, TFast, {BackgroundColor3 = C.CtrlHover}):Play()
-end)
-MinBtn.MouseLeave:Connect(function()
-    TweenService:Create(MinBtn, TFast, {BackgroundColor3 = C.CtrlBg}):Play()
-end)
-
-local MiniSquare = Instance.new("TextButton")
-MiniSquare.Name = "MiniSquare"
-MiniSquare.Size = UDim2.new(0, 50, 0, 50)
-MiniSquare.Position = UDim2.new(0, 20, 0.5, -25)
-MiniSquare.BackgroundColor3 = C.MainBg
-MiniSquare.BorderSizePixel = 0
-MiniSquare.AutoButtonColor = false
-MiniSquare.Font = Enum.Font.GothamBlack
-MiniSquare.Text = "L"
-MiniSquare.TextColor3 = C.Yellow
-MiniSquare.TextSize = 28
-MiniSquare.Visible = false
-MiniSquare.ZIndex = 50
-MiniSquare.Parent = ScreenGui
-corner(MiniSquare, 12)
-
-local MiniStroke = stroke(MiniSquare, 2, C.Yellow)
-local MiniGrad = Instance.new("UIGradient")
-MiniGrad.Color = ColorSequence.new({
-    ColorSequenceKeypoint.new(0.00, C.Yellow),
-    ColorSequenceKeypoint.new(0.25, C.White),
-    ColorSequenceKeypoint.new(0.50, C.Yellow),
-    ColorSequenceKeypoint.new(0.75, C.White),
-    ColorSequenceKeypoint.new(1.00, C.Yellow),
-})
-MiniGrad.Rotation = 0
-MiniGrad.Parent = MiniStroke
-
-local miniPulseT = 0
-RunService.RenderStepped:Connect(function(dt)
-    if not (MiniSquare and MiniSquare.Parent and MiniSquare.Visible) then return end
-    miniPulseT = miniPulseT + dt
-    MiniGrad.Rotation = (MiniGrad.Rotation + 90 * dt) % 360
-    MiniStroke.Transparency = 0.1 + (math.sin(miniPulseT * 4) + 1) * 0.2
-    MiniStroke.Thickness = 2 + (math.sin(miniPulseT * 3) + 1) * 1
-    MiniSquare.TextColor3 = C.Yellow:Lerp(C.White, (math.sin(miniPulseT * 4) + 1) / 2 * 0.5)
-end)
-
-local miniDragging, miniDragStart, miniStartPos
-MiniSquare.InputBegan:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseButton1
-    or input.UserInputType == Enum.UserInputType.Touch then
-        miniDragging = true
-        miniDragStart = input.Position
-        miniStartPos = MiniSquare.Position
-        input.Changed:Connect(function()
-            if input.UserInputState == Enum.UserInputState.End then
-                miniDragging = false
+        local newPos = UDim2.new(dragStartPos.X.Scale, dragStartPos.X.Offset + delta.X, dragStartPos.Y.Scale, dragStartPos.Y.Offset + delta.Y)
+        MainFrame.Position = newPos
+        if Settings.motionBlur ~= false and not Settings.performance then
+            for index, ghost in ipairs(ghostFrames) do
+                local mult = index * 0.4
+                local offsetX = (input.Position.X - dragStart.X) * 0.02 * mult
+                local offsetY = (input.Position.Y - dragStart.Y) * 0.02 * mult
+                ghost.Position = UDim2.new(newPos.X.Scale, newPos.X.Offset - offsetX, newPos.Y.Scale, newPos.Y.Offset - offsetY)
+                ghost.BackgroundTransparency = 0.82 + index * 0.04
             end
-        end)
-    end
-end)
-MiniSquare.InputChanged:Connect(function(input)
-    if input.UserInputType == Enum.UserInputType.MouseMovement
-    or input.UserInputType == Enum.UserInputType.Touch then
-        if miniDragging then
-            local delta = input.Position - miniDragStart
-            MiniSquare.Position = UDim2.new(
-                miniStartPos.X.Scale, miniStartPos.X.Offset + delta.X,
-                miniStartPos.Y.Scale, miniStartPos.Y.Offset + delta.Y
-            )
         end
     end
 end)
 
-MiniSquare.MouseButton1Click:Connect(function()
-    MiniSquare.Visible = false
-    MainFrame.Visible = true
-    MainFrame.Size = UDim2.new(0, WIN_W - 80, 0, WIN_H - 60)
-    TweenService:Create(MainFrame, TBounce, {Size = UDim2.new(0, WIN_W, 0, WIN_H)}):Play()
-    MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
+local TitleLabel = Instance.new("TextLabel", TopBar)
+TitleLabel.Position = UDim2.new(0, 44, 0.5, -13)
+TitleLabel.Size = UDim2.new(0, 150, 0, 26)
+TitleLabel.BackgroundTransparency = 1
+TitleLabel.Font = Enum.Font.GothamBlack
+TitleLabel.Text = "LION HUB"
+TitleLabel.TextColor3 = Colors.white
+TitleLabel.TextSize = 20
+TitleLabel.TextXAlignment = Enum.TextXAlignment.Left
+TitleLabel.ZIndex = 17
+
+local titleGradient = addGradient(TitleLabel, {
+    ColorSequenceKeypoint.new(0, Colors.yellow),
+    ColorSequenceKeypoint.new(0.25, Colors.white),
+    ColorSequenceKeypoint.new(0.5, Colors.yellow),
+    ColorSequenceKeypoint.new(0.75, Colors.white),
+    ColorSequenceKeypoint.new(1, Colors.yellow)
+})
+
+RunService.RenderStepped:Connect(function(dt)
+    if Settings.performance or not TitleLabel.Parent then return end
+    titleGradient.Rotation = (titleGradient.Rotation + 60 * dt) % 360
 end)
 
-MinBtn.MouseButton1Click:Connect(function()
-    TweenService:Create(MainFrame, TSmooth, {
-        Size = UDim2.new(0, 0, 0, 0)
-    }):Play()
-    
-    task.wait(0.3)
-    MainFrame.Visible = false
-    MiniSquare.Visible = true
-    MiniSquare.Size = UDim2.new(0, 0, 0, 0)
-    MiniSquare.Position = UDim2.new(0, 20, 0.5, -25)
-    TweenService:Create(MiniSquare, TBounce, {Size = UDim2.new(0, 50, 0, 50)}):Play()
-end)
+local VersionLabel = Instance.new("TextLabel", TopBar)
+VersionLabel.Position = UDim2.new(0, 144, 0.5, -8)
+VersionLabel.Size = UDim2.new(0, 40, 0, 16)
+VersionLabel.BackgroundTransparency = 1
+VersionLabel.Font = Enum.Font.GothamBold
+VersionLabel.Text = "v" .. VERSION
+VersionLabel.TextColor3 = Colors.dim
+VersionLabel.TextSize = 9
+VersionLabel.TextXAlignment = Enum.TextXAlignment.Left
+VersionLabel.ZIndex = 17
 
-task.spawn(function()
-    local lastT, frames, fps = os.clock(), 0, 60
-    RunService.RenderStepped:Connect(function()
-        frames = frames + 1
-        local now = os.clock()
-        if now - lastT >= 1 then
-            fps    = frames
-            frames = 0
-            lastT  = now
-            local ping = math.floor(Stats.Network.ServerStatsItem["Data Ping"]:GetValue())
-            StatsLabel.Text = string.format("Fps: %d  Ping: %dms", fps, ping)
-        end
-    end)
-end)
+local StatsLabel = Instance.new("TextLabel", TopBar)
+StatsLabel.AnchorPoint = Vector2.new(1, 0.5)
+StatsLabel.Position = UDim2.new(1, -110, 0.5, 0)
+StatsLabel.Size = UDim2.new(0, 130, 0, 18)
+StatsLabel.BackgroundTransparency = 1
+StatsLabel.Font = Enum.Font.GothamBold
+StatsLabel.Text = "Scripts: 0 | Fps: 60"
+StatsLabel.TextColor3 = Colors.yellowBright
+StatsLabel.TextSize = 9
+StatsLabel.TextXAlignment = Enum.TextXAlignment.Right
+StatsLabel.ZIndex = 17
 
-local Sidebar = Instance.new("Frame")
-Sidebar.Name                  = "Sidebar"
-Sidebar.Position              = UDim2.new(0, PAD, 0, BODY_Y)
-Sidebar.Size                  = UDim2.new(0, SIDEBAR_W, 0, BODY_H)
-Sidebar.BackgroundColor3      = C.SidebarBg
-Sidebar.BackgroundTransparency = 0.18
-Sidebar.BorderSizePixel       = 0
-Sidebar.ClipsDescendants      = true
-Sidebar.ZIndex                = 14
-Sidebar.Parent                = MainFrame
-corner(Sidebar, 12)
-stroke(Sidebar, 1, C.Border)
+local CloseButton = Instance.new("TextButton", TopBar)
+CloseButton.AnchorPoint = Vector2.new(1, 0.5)
+CloseButton.Position = UDim2.new(1, -10, 0.5, 0)
+CloseButton.Size = UDim2.new(0, 22, 0, 22)
+CloseButton.BackgroundColor3 = Colors.control
+CloseButton.AutoButtonColor = false
+CloseButton.Text = "X"
+CloseButton.TextColor3 = Colors.white
+CloseButton.Font = Enum.Font.GothamBold
+CloseButton.TextSize = 11
+CloseButton.ZIndex = 18
+addCorner(CloseButton, 6)
 
-local TabScroll = Instance.new("ScrollingFrame")
-TabScroll.Name                = "TabScroll"
-TabScroll.Size                = UDim2.new(1, 0, 1, -48)
-TabScroll.Position            = UDim2.new(0, 0, 0, 0)
-TabScroll.BackgroundTransparency = 1
-TabScroll.BorderSizePixel     = 0
-TabScroll.ScrollBarThickness  = 3
-TabScroll.ScrollBarImageColor3 = C.Yellow
-TabScroll.CanvasSize          = UDim2.new(0, 0, 0, 0)
-TabScroll.ZIndex              = 15
-TabScroll.Parent              = Sidebar
+local MinimizeButton = Instance.new("TextButton", TopBar)
+MinimizeButton.AnchorPoint = Vector2.new(1, 0.5)
+MinimizeButton.Position = UDim2.new(1, -36, 0.5, 0)
+MinimizeButton.Size = UDim2.new(0, 22, 0, 22)
+MinimizeButton.BackgroundColor3 = Colors.control
+MinimizeButton.AutoButtonColor = false
+MinimizeButton.Text = "-"
+MinimizeButton.TextColor3 = Colors.white
+MinimizeButton.Font = Enum.Font.GothamBold
+MinimizeButton.TextSize = 13
+MinimizeButton.ZIndex = 18
+addCorner(MinimizeButton, 6)
 
-local TabList = Instance.new("UIListLayout")
-TabList.Padding = UDim.new(0, 4)
-TabList.SortOrder = Enum.SortOrder.LayoutOrder
-TabList.Parent = TabScroll
+local TipBar = Instance.new("Frame", MainFrame)
+TipBar.AnchorPoint = Vector2.new(0.5, 1)
+TipBar.Position = UDim2.new(0.5, 0, 1, -6)
+TipBar.Size = UDim2.new(1, -16, 0, 20)
+TipBar.BackgroundColor3 = Color3.fromRGB(20, 20, 26)
+TipBar.BackgroundTransparency = 0.4
+TipBar.BorderSizePixel = 0
+TipBar.ZIndex = 18
+addCorner(TipBar, 6)
 
-local tabList = {
-    "KEYLESS",
-    "STEAL AN EGG",
-    "DEATH BALL",
-    "SWORD RNG X",
-    "UNIVERSAL",
-    "FISH TRAINING",
-    "RIVALS",
-    "FLUXO PVP",
-    "BLOX FRUITS",
-    "PAINT A MANGA",
-    "VALLEY PRISON",
-    "JUJUTSU SHENANIGANS",
-    "99 NIGHTS"
+local TipIcon = Instance.new("TextLabel", TipBar)
+TipIcon.Position = UDim2.new(0, 8, 0, 0)
+TipIcon.Size = UDim2.new(0, 14, 1, 0)
+TipIcon.BackgroundTransparency = 1
+TipIcon.Font = Enum.Font.GothamBlack
+TipIcon.Text = "?"
+TipIcon.TextColor3 = Colors.yellow
+TipIcon.TextSize = 11
+TipIcon.TextXAlignment = Enum.TextXAlignment.Left
+TipIcon.ZIndex = 19
+
+local TipLabel = Instance.new("TextLabel", TipBar)
+TipLabel.Position = UDim2.new(0, 24, 0, 0)
+TipLabel.Size = UDim2.new(1, -32, 1, 0)
+TipLabel.BackgroundTransparency = 1
+TipLabel.Font = Enum.Font.Gotham
+TipLabel.Text = ""
+TipLabel.TextColor3 = Colors.white
+TipLabel.TextSize = 10
+TipLabel.TextXAlignment = Enum.TextXAlignment.Left
+TipLabel.TextTruncate = Enum.TextTruncate.AtEnd
+TipLabel.ZIndex = 19
+
+local TipList = {
+    "Do you know Lion Hub was created because the Owner was bored?",
+    "Every script in Lion Hub is free - no keys, no paywalls.",
+    "Type keyless in the search box to see only free scripts.",
+    "Type keyed to see scripts that need a key.",
+    "Type fav to see only your saved favorites.",
+    "RightShift toggles the hub instantly on desktop.",
+    "Tap the floating L ball to restore a minimized hub.",
+    "The floating L ball is draggable - move it anywhere.",
+    "Favorites save across sessions - they never disappear.",
+    "Lo-fi mode plays chill beats while you grind.",
+    "You can minimize the hub instead of closing it.",
+    "Search filters work instantly - no need to press Enter.",
+    "The star icon on a card saves it to favorites.",
+    "Lion Hub has hundreds of scripts across 30+ games.",
+    "Auto-farm scripts run best in private servers.",
+    "Found a broken script? Report it to the Lion Hub team.",
+    "Every script loads through a pcall - nothing crashes the hub."
 }
-local tabButtons = {}
-local currentTab = "KEYLESS"
 
-local function createTab(name, order)
-    local btn = Instance.new("TextButton")
-    btn.Name = name .. "Tab"
-    btn.Size = UDim2.new(1, -16, 0, 34)
-    btn.BackgroundColor3 = C.TabInactive
-    btn.BorderSizePixel = 0
-    btn.AutoButtonColor = false
-    btn.Font = Enum.Font.GothamBold
-    btn.Text = name
-    btn.TextColor3 = C.TabText
-    btn.TextSize = 10
-    btn.TextXAlignment = Enum.TextXAlignment.Left
-    btn.ZIndex = 15
-    btn.LayoutOrder = order
-    btn.Parent = TabScroll
-    corner(btn, 8)
-    
-    local padding = Instance.new("UIPadding")
-    padding.PaddingLeft = UDim.new(0, 10)
-    padding.Parent = btn
-    
-    btn.MouseEnter:Connect(function()
-        if currentTab ~= name then
-            TweenService:Create(btn, TFast, {BackgroundColor3 = C.CtrlHover}):Play()
-        end
-    end)
-    btn.MouseLeave:Connect(function()
-        if currentTab ~= name then
-            TweenService:Create(btn, TFast, {BackgroundColor3 = C.TabInactive}):Play()
-        end
-    end)
-    
-    return btn
-end
+local tipIndex = 1
+local tipCancelled = false
 
-for i, name in ipairs(tabList) do
-    tabButtons[name] = createTab(name, i)
-end
-
-TabScroll.CanvasSize = UDim2.new(0, 0, 0, (#tabList * 38) + 10)
-
-local ProfileFrame = Instance.new("Frame")
-ProfileFrame.Name                  = "ProfileFrame"
-ProfileFrame.AnchorPoint           = Vector2.new(0, 1)
-ProfileFrame.Position              = UDim2.new(0, 8, 1, -8)
-ProfileFrame.Size                  = UDim2.new(1, -16, 0, 40)
-ProfileFrame.BackgroundTransparency = 1
-ProfileFrame.ZIndex                = 15
-ProfileFrame.Parent                = Sidebar
-
-local Avatar = Instance.new("ImageLabel")
-Avatar.Name                  = "Avatar"
-Avatar.Position              = UDim2.new(0, 0, 0.5, -14)
-Avatar.Size                  = UDim2.new(0, 28, 0, 28)
-Avatar.BackgroundColor3      = Color3.fromRGB(30, 30, 40)
-Avatar.Image                 = "rbxassetid://6023426923"
-Avatar.ZIndex                = 16
-Avatar.Parent                = ProfileFrame
-corner(Avatar, 99)
-stroke(Avatar, 1.5, C.Yellow)
+local TipTapArea = Instance.new("TextButton", TipBar)
+TipTapArea.Size = UDim2.new(1, 0, 1, 0)
+TipTapArea.BackgroundTransparency = 1
+TipTapArea.Text = ""
+TipTapArea.ZIndex = 20
+TipTapArea.MouseButton1Click:Connect(function() tipCancelled = true end)
 
 task.spawn(function()
-    local img, loaded = Players:GetUserThumbnailAsync(
-        LocalPlayer.UserId,
-        Enum.ThumbnailType.HeadShot,
-        Enum.ThumbnailSize.Size420x420
-    )
-    if loaded then Avatar.Image = img end
+    task.wait(1)
+    while ScreenGui.Parent and MainFrame.Parent do
+        if Settings.tipsOn ~= false then
+            TipBar.Visible = true
+            local currentTip = TipList[tipIndex]
+            TipLabel.Text = "? "
+            tipCancelled = false
+            for i = 1, #currentTip do
+                if tipCancelled then
+                    TipLabel.Text = "? " .. currentTip
+                    break
+                end
+                TipLabel.Text = "? " .. currentTip:sub(1, i)
+                if i % 3 == 0 then
+                    pcall(function()
+                        local s = Instance.new("Sound")
+                        s.SoundId = SoundIds.click
+                        s.Volume = 0.06 * masterVolume
+                        s.PlaybackSpeed = math.random(90, 110) / 100
+                        s.Parent = SoundService
+                        s:Play()
+                        game:GetService("Debris"):AddItem(s, 1)
+                    end)
+                end
+                task.wait(0.028)
+            end
+            task.wait(math.max(2.5, #currentTip * 0.04) + 3)
+            tipIndex = tipIndex + 1
+            if tipIndex > #TipList then tipIndex = 1 end
+        else
+            TipBar.Visible = false
+            task.wait(1)
+        end
+    end
 end)
 
-local UserNameLabel = Instance.new("TextLabel")
-UserNameLabel.Position              = UDim2.new(0, 34, 0.5, -12)
-UserNameLabel.Size                  = UDim2.new(0, SIDEBAR_W - 50, 0, 13)
-UserNameLabel.BackgroundTransparency = 1
-UserNameLabel.Font                  = Enum.Font.GothamBold
-UserNameLabel.Text                  = LocalPlayer.Name
-UserNameLabel.TextColor3            = C.White
-UserNameLabel.TextSize              = 11
-UserNameLabel.TextXAlignment        = Enum.TextXAlignment.Left
-UserNameLabel.ZIndex                = 16
-UserNameLabel.Parent                = ProfileFrame
+local Sidebar = Instance.new("Frame", MainFrame)
+Sidebar.Position = UDim2.new(0, PADDING, 0, BODY_Y)
+Sidebar.Size = UDim2.new(0, SIDEBAR_WIDTH, 0, BODY_H - 24)
+Sidebar.BackgroundColor3 = Colors.sidebar
+Sidebar.BackgroundTransparency = 0.18
+Sidebar.BorderSizePixel = 0
+Sidebar.ClipsDescendants = true
+Sidebar.ZIndex = 14
+addCorner(Sidebar, 12)
+addStroke(Sidebar, 1, Colors.border)
 
-local TimerLabel = Instance.new("TextLabel")
-TimerLabel.Position              = UDim2.new(0, 34, 0.5, 1)
-TimerLabel.Size                  = UDim2.new(0, SIDEBAR_W - 50, 0, 11)
+local TabScroll = Instance.new("ScrollingFrame", Sidebar)
+TabScroll.Size = UDim2.new(1, 0, 1, -70)
+TabScroll.BackgroundTransparency = 1
+TabScroll.BorderSizePixel = 0
+TabScroll.ScrollBarThickness = 3
+TabScroll.ScrollBarImageColor3 = Colors.yellow
+TabScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+TabScroll.ZIndex = 15
+
+local TabListLayout = Instance.new("UIListLayout", TabScroll)
+TabListLayout.Padding = UDim.new(0, 3)
+TabListLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local TabStructure = {
+    {header = "MAIN"},
+    {tab = "FAVORITE"}, {tab = "LEADERBOARD"},
+    {header = "GAMES"},
+    {tab = "STEAL A BRAINROT"}, {tab = "STEAL AN EGG"}, {tab = "MM2"},
+    {tab = "RIDE A PET"}, {tab = "JUMP FOR ANIMALS"}, {tab = "BLOX FRUITS"},
+    {tab = "BEDWARS"}, {tab = "ANIMAL HOSPITAL"}, {tab = "GROW A GARDEN 2"},
+    {tab = "99 NIGHTS"}, {tab = "SLAYERS 2"}, {tab = "RIVALS"}, {tab = "Sell Lemons"},
+    {tab = "ARSENAL"}, {tab = "FORSAKEN"}, {tab = "DA HOOD"},
+    {tab = "BLADE BALL"}, {tab = "PET SIM 99"}, {tab = "ADOPT ME"},
+    {tab = "JAILBREAK"}, {tab = "TOWER DEFENSE"},
+    {header = "SCRIPTS"},
+    {tab = "UNIVERSAL"}, {tab = "AUTO FARM"}, {tab = "ESP"},
+    {tab = "AIMBOT"}, {tab = "TROLL"}, {tab = "SPY / REMOTE"},
+    {tab = "UI LIBS"}, {tab = "AUDIO"}, {tab = "BYPASS"},
+    {header = "LIBRARY"},
+    {tab = "SPECIAL"}, {tab = "LEAKED"},
+    {header = "OTHER"},
+    {tab = "HISTORY"}, {tab = "SETTINGS"}, {tab = "INFO"}
+}
+
+local tabButtons = {}
+local currentTab = "FAVORITE"
+local currentSort = "az"
+local layoutOrder = 0
+
+local function makeTabButton(name)
+    local button = Instance.new("TextButton", TabScroll)
+    button.Size = UDim2.new(1, -14, 0, 28)
+    button.BackgroundColor3 = Colors.tabInactive
+    button.BorderSizePixel = 0
+    button.AutoButtonColor = false
+    button.Font = Enum.Font.GothamBold
+    button.Text = name
+    button.TextColor3 = Colors.tabText
+    button.TextSize = 9
+    button.TextXAlignment = Enum.TextXAlignment.Left
+    button.ZIndex = 15
+    button.LayoutOrder = layoutOrder
+    addCorner(button, 8)
+
+    local pad = Instance.new("UIPadding", button)
+    pad.PaddingLeft = UDim.new(0, 10)
+
+    local hoverStroke = addStroke(button, 1.5, Colors.yellow)
+    hoverStroke.Transparency = 1
+
+    local counter = Instance.new("TextLabel", button)
+    counter.Name = "Counter"
+    counter.AnchorPoint = Vector2.new(1, 0.5)
+    counter.Position = UDim2.new(1, -8, 0.5, 0)
+    counter.Size = UDim2.new(0, 30, 0, 14)
+    counter.BackgroundTransparency = 1
+    counter.Font = Enum.Font.GothamBold
+    counter.Text = ""
+    counter.TextColor3 = Colors.dim
+    counter.TextSize = 8
+    counter.TextXAlignment = Enum.TextXAlignment.Right
+    counter.ZIndex = 16
+
+    button.MouseEnter:Connect(function()
+        if not Settings.performance then
+            TweenService:Create(hoverStroke, FastTween, {Transparency = 0.3}):Play()
+            TweenService:Create(button, FastTween, {BackgroundColor3 = Colors.controlHover}):Play()
+        end
+    end)
+    button.MouseLeave:Connect(function()
+        TweenService:Create(hoverStroke, FastTween, {Transparency = 1}):Play()
+        if currentTab ~= name then
+            TweenService:Create(button, FastTween, {BackgroundColor3 = Colors.tabInactive}):Play()
+        end
+    end)
+
+    return button
+end
+
+local function makeCategoryHeader(text)
+    local header = Instance.new("TextLabel", TabScroll)
+    header.Size = UDim2.new(1, -14, 0, 18)
+    header.BackgroundTransparency = 1
+    header.Font = Enum.Font.GothamBold
+    header.Text = "-- " .. text .. " --"
+    header.TextColor3 = Colors.categoryHeader
+    header.TextSize = 8
+    header.TextXAlignment = Enum.TextXAlignment.Center
+    header.ZIndex = 15
+    header.LayoutOrder = layoutOrder
+
+    local gradient = addGradient(header, {
+        ColorSequenceKeypoint.new(0, Color3.fromRGB(255, 100, 200)),
+        ColorSequenceKeypoint.new(0.5, Color3.fromRGB(100, 200, 255)),
+        ColorSequenceKeypoint.new(1, Color3.fromRGB(255, 200, 100))
+    })
+
+    RunService.RenderStepped:Connect(function(dt)
+        if Settings.performance or not header.Parent then return end
+        gradient.Rotation = (gradient.Rotation + 30 * dt) % 360
+    end)
+end
+
+for _, entry in ipairs(TabStructure) do
+    layoutOrder = layoutOrder + 1
+    if entry.header then
+        makeCategoryHeader(entry.header)
+    elseif entry.tab then
+        tabButtons[entry.tab] = makeTabButton(entry.tab)
+    end
+end
+
+TabScroll.CanvasSize = UDim2.new(0, 0, 0, layoutOrder * 30 + 10)
+
+local ProfileFrame = Instance.new("Frame", Sidebar)
+ProfileFrame.AnchorPoint = Vector2.new(0, 1)
+ProfileFrame.Position = UDim2.new(0, 8, 1, -8)
+ProfileFrame.Size = UDim2.new(1, -16, 0, 38)
+ProfileFrame.BackgroundTransparency = 1
+ProfileFrame.ZIndex = 15
+
+local AvatarImage = Instance.new("ImageLabel", ProfileFrame)
+AvatarImage.Position = UDim2.new(0, 0, 0.5, -13)
+AvatarImage.Size = UDim2.new(0, 26, 0, 26)
+AvatarImage.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+AvatarImage.Image = "rbxassetid://6023426923"
+AvatarImage.ZIndex = 16
+addCorner(AvatarImage, 99)
+addStroke(AvatarImage, 1.5, Colors.yellow)
+
+task.spawn(function()
+    pcall(function()
+        local image, loaded = Players:GetUserThumbnailAsync(LocalPlayer.UserId, Enum.ThumbnailType.HeadShot, Enum.ThumbnailSize.Size420x420)
+        if loaded then AvatarImage.Image = image end
+    end)
+end)
+
+local UsernameLabel = Instance.new("TextLabel", ProfileFrame)
+UsernameLabel.Position = UDim2.new(0, 32, 0, 3)
+UsernameLabel.Size = UDim2.new(0, SIDEBAR_WIDTH - 48, 0, 14)
+UsernameLabel.BackgroundTransparency = 1
+UsernameLabel.Font = Enum.Font.GothamBold
+UsernameLabel.Text = LocalPlayer.Name
+UsernameLabel.TextColor3 = Colors.white
+UsernameLabel.TextSize = 10
+UsernameLabel.TextXAlignment = Enum.TextXAlignment.Left
+UsernameLabel.TextTruncate = Enum.TextTruncate.AtEnd
+UsernameLabel.ZIndex = 16
+
+local TimerLabel = Instance.new("TextLabel", ProfileFrame)
+TimerLabel.Position = UDim2.new(0, 32, 0, 19)
+TimerLabel.Size = UDim2.new(0, SIDEBAR_WIDTH - 48, 0, 14)
 TimerLabel.BackgroundTransparency = 1
-TimerLabel.Font                  = Enum.Font.Gotham
-TimerLabel.Text                  = "00:00:00"
-TimerLabel.TextColor3            = C.DimText
-TimerLabel.TextSize              = 10
-TimerLabel.TextXAlignment        = Enum.TextXAlignment.Left
-TimerLabel.ZIndex                = 16
-TimerLabel.Parent                = ProfileFrame
+TimerLabel.Font = Enum.Font.Gotham
+TimerLabel.Text = "00:00:00"
+TimerLabel.TextColor3 = Colors.dim
+TimerLabel.TextSize = 9
+TimerLabel.TextXAlignment = Enum.TextXAlignment.Left
+TimerLabel.ZIndex = 16
 
 local sessionStart = os.time()
 task.spawn(function()
-    while ProfileFrame and ProfileFrame.Parent do
-        local e = os.time() - sessionStart
-        TimerLabel.Text = string.format("%02d:%02d:%02d",
-            math.floor(e / 3600),
-            math.floor((e % 3600) / 60),
-            e % 60
-        )
+    while ProfileFrame.Parent do
+        local elapsed = os.time() - sessionStart
+        TimerLabel.Text = string.format("%02d:%02d:%02d", math.floor(elapsed / 3600), math.floor((elapsed % 3600) / 60), elapsed % 60)
         task.wait(1)
     end
 end)
 
-local ContentPanel = Instance.new("Frame")
-ContentPanel.Name                  = "ContentPanel"
-ContentPanel.Position              = UDim2.new(0, CONTENT_X, 0, BODY_Y)
-ContentPanel.Size                  = UDim2.new(0, CONTENT_W, 0, BODY_H)
-ContentPanel.BackgroundColor3      = C.ContentBg
+local ContentPanel = Instance.new("Frame", MainFrame)
+ContentPanel.Position = UDim2.new(0, CONTENT_X, 0, BODY_Y)
+ContentPanel.Size = UDim2.new(0, CONTENT_W, 0, BODY_H - 24)
+ContentPanel.BackgroundColor3 = Colors.content
 ContentPanel.BackgroundTransparency = 0.18
-ContentPanel.BorderSizePixel       = 0
-ContentPanel.ClipsDescendants      = true
-ContentPanel.ZIndex                = 14
-ContentPanel.Parent                = MainFrame
-corner(ContentPanel, 12)
-stroke(ContentPanel, 1, C.Border)
+ContentPanel.BorderSizePixel = 0
+ContentPanel.ClipsDescendants = true
+ContentPanel.ZIndex = 14
+addCorner(ContentPanel, 12)
+addStroke(ContentPanel, 1, Colors.border)
 
-local ScrollingFrame = Instance.new("ScrollingFrame")
-ScrollingFrame.Name                = "ScriptList"
-ScrollingFrame.Size                = UDim2.new(1, -10, 1, -10)
-ScrollingFrame.Position            = UDim2.new(0, 5, 0, 5)
-ScrollingFrame.BackgroundTransparency = 1
-ScrollingFrame.BorderSizePixel     = 0
-ScrollingFrame.ScrollBarThickness  = 4
-ScrollingFrame.ScrollBarImageColor3 = C.Yellow
-ScrollingFrame.CanvasSize          = UDim2.new(0, 0, 0, 0)
-ScrollingFrame.ZIndex              = 15
-ScrollingFrame.Parent              = ContentPanel
+local SearchFrame = Instance.new("Frame", ContentPanel)
+SearchFrame.Size = UDim2.new(1, -60, 0, 28)
+SearchFrame.Position = UDim2.new(0, 8, 0, 8)
+SearchFrame.BackgroundColor3 = Colors.control
+SearchFrame.BorderSizePixel = 0
+SearchFrame.ZIndex = 16
+addCorner(SearchFrame, 8)
+addStroke(SearchFrame, 1, Colors.border)
 
-local UIListLayout = Instance.new("UIListLayout")
-UIListLayout.Padding = UDim.new(0, 8)
-UIListLayout.SortOrder = Enum.SortOrder.LayoutOrder
-UIListLayout.Parent = ScrollingFrame
+local SearchBox = Instance.new("TextBox", SearchFrame)
+SearchBox.Size = UDim2.new(1, -16, 1, 0)
+SearchBox.Position = UDim2.new(0, 8, 0, 0)
+SearchBox.BackgroundTransparency = 1
+SearchBox.Font = Enum.Font.Gotham
+SearchBox.PlaceholderText = "Search scripts..."
+SearchBox.PlaceholderColor3 = Colors.dim
+SearchBox.Text = ""
+SearchBox.TextColor3 = Colors.white
+SearchBox.TextSize = 11
+SearchBox.TextXAlignment = Enum.TextXAlignment.Left
+SearchBox.ClearTextOnFocus = false
+SearchBox.ZIndex = 17
 
-local ScriptRegistry = {}
+local SortButton = Instance.new("TextButton", ContentPanel)
+SortButton.AnchorPoint = Vector2.new(1, 0)
+SortButton.Position = UDim2.new(1, -8, 0, 8)
+SortButton.Size = UDim2.new(0, 48, 0, 28)
+SortButton.BackgroundColor3 = Colors.control
+SortButton.BorderSizePixel = 0
+SortButton.AutoButtonColor = false
+SortButton.Font = Enum.Font.GothamBold
+SortButton.Text = "A-Z"
+SortButton.TextColor3 = Colors.yellowBright
+SortButton.TextSize = 10
+SortButton.ZIndex = 16
+addCorner(SortButton, 8)
+addStroke(SortButton, 1, Colors.border)
 
-ScriptRegistry["RENE BATTLEBONIA NEW"] = function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/sabscrip-arch/srver/refs/heads/main/Stealanegg"))()
-end
+local CountLabel = Instance.new("TextLabel", ContentPanel)
+CountLabel.Size = UDim2.new(1, -12, 0, 12)
+CountLabel.Position = UDim2.new(0, 8, 0, 40)
+CountLabel.BackgroundTransparency = 1
+CountLabel.Font = Enum.Font.Gotham
+CountLabel.Text = ""
+CountLabel.TextColor3 = Colors.dim
+CountLabel.TextSize = 9
+CountLabel.TextXAlignment = Enum.TextXAlignment.Left
+CountLabel.ZIndex = 17
 
-ScriptRegistry["CLOUT HUB"] = function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/ClouthubOnTop/Loader/main/main.lua"))()
-end
+local ScriptScroll = Instance.new("ScrollingFrame", ContentPanel)
+ScriptScroll.Size = UDim2.new(1, -12, 1, -60)
+ScriptScroll.Position = UDim2.new(0, 6, 0, 54)
+ScriptScroll.BackgroundTransparency = 1
+ScriptScroll.BorderSizePixel = 0
+ScriptScroll.ScrollBarThickness = 4
+ScriptScroll.ScrollBarImageColor3 = Colors.yellow
+ScriptScroll.CanvasSize = UDim2.new(0, 0, 0, 0)
+ScriptScroll.ZIndex = 15
 
-ScriptRegistry["CHILI HUB"] = function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/tienkhanh1/spicy/main/Chilli.lua"))()
-end
+local ScriptListLayout = Instance.new("UIListLayout", ScriptScroll)
+ScriptListLayout.Padding = UDim.new(0, 8)
+ScriptListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
-ScriptRegistry["DICE HUB"] = function()
-    task.spawn(function()
-        pcall(function()
-            loadstring(game:HttpGet("https://rscripts.net/api/telemetry/v2/client.lua?s=6aa80dbea5185ed62c47a04c"))()
-        end)
+local ToastHolder = Instance.new("Frame", ScreenGui)
+ToastHolder.AnchorPoint = Vector2.new(1, 1)
+ToastHolder.Position = UDim2.new(1, -14, 1, -50)
+ToastHolder.Size = UDim2.new(0, 260, 1, -140)
+ToastHolder.BackgroundTransparency = 1
+ToastHolder.ZIndex = 99
+
+local ToastLayout = Instance.new("UIListLayout", ToastHolder)
+ToastLayout.Padding = UDim.new(0, 6)
+ToastLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+ToastLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
+ToastLayout.SortOrder = Enum.SortOrder.LayoutOrder
+
+local toastCounter = 0
+local activeToasts = {}
+
+local function showToast(message, color, icon)
+    color = color or Colors.yellow
+    icon = icon or "!"
+    toastCounter = toastCounter + 1
+    local toastId = toastCounter
+    local toast = Instance.new("Frame", ToastHolder)
+    toast.Size = UDim2.new(0, 260, 0, 42)
+    toast.BackgroundColor3 = Colors.card
+    toast.BackgroundTransparency = 0.05
+    toast.BorderSizePixel = 0
+    toast.ZIndex = 100
+    toast.LayoutOrder = toastId
+    addCorner(toast, 8)
+    addStroke(toast, 1.5, color)
+    local leftBar = Instance.new("Frame", toast)
+    leftBar.Size = UDim2.new(0, 4, 1, 0)
+    leftBar.BackgroundColor3 = color
+    leftBar.BorderSizePixel = 0
+    leftBar.ZIndex = 101
+    addCorner(leftBar, 8)
+    local iconLabel = Instance.new("TextLabel", toast)
+    iconLabel.Size = UDim2.new(0, 24, 1, 0)
+    iconLabel.Position = UDim2.new(0, 8, 0, 0)
+    iconLabel.BackgroundTransparency = 1
+    iconLabel.Font = Enum.Font.GothamBlack
+    iconLabel.Text = icon
+    iconLabel.TextColor3 = color
+    iconLabel.TextSize = 14
+    iconLabel.ZIndex = 101
+    local textLabel = Instance.new("TextLabel", toast)
+    textLabel.Size = UDim2.new(1, -42, 1, 0)
+    textLabel.Position = UDim2.new(0, 32, 0, 0)
+    textLabel.BackgroundTransparency = 1
+    textLabel.Font = Enum.Font.GothamBold
+    textLabel.Text = message
+    textLabel.TextColor3 = Colors.white
+    textLabel.TextSize = 11
+    textLabel.TextXAlignment = Enum.TextXAlignment.Left
+    textLabel.TextWrapped = true
+    textLabel.ZIndex = 101
+    toast.BackgroundTransparency = 1
+    toast.Size = UDim2.new(0, 240, 0, 38)
+    TweenService:Create(toast, FastTween, {BackgroundTransparency = 0.05, Size = UDim2.new(0, 260, 0, 42)}):Play()
+    playSound("toast", 0.5)
+    activeToasts[toastId] = toast
+    if #activeToasts > 3 then
+        for _, existingToast in pairs(activeToasts) do
+            if existingToast.Parent and existingToast ~= toast then
+                local temp = existingToast
+                activeToasts[existingToast.LayoutOrder] = nil
+                TweenService:Create(temp, FastTween, {BackgroundTransparency = 1}):Play()
+                task.delay(0.2, function() temp:Destroy() end)
+                break
+            end
+        end
+    end
+    task.delay(2.6, function()
+        if toast.Parent then
+            TweenService:Create(toast, FastTween, {BackgroundTransparency = 1, Size = UDim2.new(0, 240, 0, 38)}):Play()
+            task.wait(0.25)
+            activeToasts[toastId] = nil
+            toast:Destroy()
+        end
     end)
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/LSSOPS/OpenSource/refs/heads/main/DiceHub_Steal_An_Egg.lua"))()
 end
 
-ScriptRegistry["KIRA HUB"] = function()
-    task.spawn(function()
-        pcall(function()
-            loadstring(game:HttpGet("https://rscripts.net/api/telemetry/v2/client.lua?s=6aa948ba793a988c2cd91800"))()
-        end)
-    end)
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/LSSOPS/OpenSource/refs/heads/main/KiraHub_Steal_An_Egg.lua"))()
-end
-
-ScriptRegistry["MOON HUB"] = function()
-    loadstring(game:HttpGet("https://api.luarmor.net/files/v4/loaders/c12d7a4a94f0d10c27f21ff462e781d5.lua"))()
-end
-
-ScriptRegistry["OUROBORUS HUB"] = function()
-    task.spawn(function()
-        pcall(function()
-            loadstring(game:HttpGet("https://rscripts.net/api/telemetry/v2/client.lua?s=6ab2514f3acd8c0b6c562389"))()
-        end)
-    end)
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/joustingmatch/Ouroboros/main/loader.lua"))()
-end
-
-ScriptRegistry["COMMAND-XYZ"] = function()
-    task.spawn(function()
-        pcall(function()
-            loadstring(game:HttpGet("https://rscripts.net/api/telemetry/client.lua?s=692bedf501aeda0f98ab8b1f"))()
-        end)
-    end)
-    loadstring(game:HttpGet("https://github.com/xxpwnxxx420lord/Cmd-XYZ/blob/main/init.lua?raw=true", true))()
-end
-
-ScriptRegistry["CONSOLE OPENER"] = function()
-    task.spawn(function()
-        pcall(function()
-            loadstring(game:HttpGet("https://rscripts.net/api/telemetry/client.lua?s=695110095f6a913b1f5abbac"))()
-        end)
-    end)
-    local screengui = Instance.new("ScreenGui", game:GetService("CoreGui"))
-    local button = Instance.new("TextButton", screengui)
-    screengui.ResetOnSpawn = false
-    button.Size = UDim2.new(0, 100, 0, 50)
-    button.Position = UDim2.new(0, 100, 0, 100)
-    button.Text = "F9"
-    button.MouseButton1Click:Connect(function()
-        game:GetService("StarterGui"):SetCore("DevConsoleVisible", true)
-    end)
-end
-
-ScriptRegistry["DYNAMIC FLY"] = function()
-    task.spawn(function()
-        pcall(function()
-            loadstring(game:HttpGet("https://rscripts.net/api/telemetry/client.lua?s=6a8f133d93d314acdc93b2b3"))()
-        end)
-    end)
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/aabbaaii13/aabbaaii/refs/heads/main/DynamicFly/DFly.lua"))()
-end
-
-ScriptRegistry["ANTI-AFK"] = function()
-    task.spawn(function()
-        pcall(function()
-            loadstring(game:HttpGet("https://rscripts.net/api/telemetry/client.lua?s=6a0dfbab7919ff85185c58b7"))()
-        end)
-    end)
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/Luongdaynetroi/AntiAfk/refs/heads/main/Free/.lua"))()
-end
-
-ScriptRegistry["LUCID EXECUTOR"] = function()
-    getgenv().__Lucid_Version = "Modern"
-    loadstring(game:HttpGet("https://rbxscriptz.pages.dev/scripts/lucid"))()
-end
-
-ScriptRegistry["KYAMI HUB"] = function()
-    loadstring(game:HttpGet("https://github.com/kyami-lua/fish/blob/main/training"))()
-end
-
-ScriptRegistry["KORAX RIVALS"] = function()
-    task.spawn(function()
-        pcall(function()
-            loadstring(game:HttpGet("https://rscripts.net/api/telemetry/v2/client.lua?s=6a788d1102665394e7da29ef"))()
-        end)
-    end)
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/imshrak/rivals/refs/heads/main/main"))()
-end
-
-ScriptRegistry["VOID HUB"] = function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/kawat7622-collab/FluxoPVP/refs/heads/main/Main.lua", true))()
-end
-
-ScriptRegistry["DAC CAU HUB"] = function()
-    task.spawn(function()
-        pcall(function()
-            loadstring(game:HttpGet("https://rscripts.net/api/telemetry/v2/client.lua?s=6a15d80e65da70ee73b736a8"))()
-        end)
-    end)
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/Luongdaynetroi/Testscript/refs/heads/main/DCHub/BloxFruits/V3"))()
-end
-
-ScriptRegistry["GRAVITY HUB"] = function()
-    task.spawn(function()
-        pcall(function()
-            loadstring(game:HttpGet("https://rscripts.net/api/telemetry/v2/client.lua?s=6a49def73e697a0c526cc3ff"))()
-        end)
-    end)
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/Dev-GravityHub/BloxFruit/refs/heads/main/Main.lua"))()
-end
-
-ScriptRegistry["SPEED HUB"] = function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/AhmadV99/Speed-Hub-X/main/Speed%20Hub%20X.lua", true))()
-end
-
-ScriptRegistry["VOIDHUB BOUNTY HUNT"] = function()
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/VoidDeveloper67/VoidHub/refs/heads/main/Void"))()
-end
-
-ScriptRegistry["VOLARIS HUB"] = function()
-    task.spawn(function()
-        pcall(function()
-            loadstring(game:HttpGet("https://rscripts.net/api/telemetry/v2/client.lua?s=6a96a53691ed50bee678ad54"))()
-        end)
-    end)
-    loadstring(game:HttpGet("https://raw.githubusercontent.com/flyrbo/Volaris/refs/heads/main/Loader.luau"))()
-end
-
-ScriptRegistry["MUNKEY HUB"] = function()
-    loadstring(game:HttpGet("https://api.obscuravm.com/scripts/1871875863152597113"))()
-end
-
-ScriptRegistry["FERBY HUB"] = function()
-    loadstring(game:HttpGet("https://pastefy.app/1oOgzjqE/raw"))()
-end
-
-ScriptRegistry["AKIRA HUB"] = function()
-    loadstring(game:HttpGet("https://api.jnkie.com/api/v1/luascripts/public/03773fb183aa5a86746312c830d62eb7f634e0064ca2565fe3585be062418697/download"))()
-end
-
-ScriptRegistry["AURORA HUB"] = function()
-    loadstring(game:HttpGet("https://api.jnkie.com/api/v1/luascripts/public/03773fb183aa5a86746312c830d62eb7f634e0064ca2565fe3585be062418697/download"))()
-end
-
-local scriptData = {
-    {name = "RENE BATTLEBONIA NEW", status = "KEYLESS", type = "steal an egg"},
-    {name = "CLOUT HUB", status = "KEYLESS", type = "steal an egg"},
-    {name = "CHILI HUB", status = "KEYLESS", type = "steal an egg"},
-    {name = "DICE HUB", status = "KEYLESS", type = "steal an egg"},
-    {name = "KIRA HUB", status = "KEYLESS", type = "steal an egg"},
-    {name = "MOON HUB", status = "KEYLESS", type = "death ball"},
-    {name = "OUROBORUS HUB", status = "KEYLESS", type = "sword rng x"},
-    {name = "COMMAND-XYZ", status = "KEYLESS", type = "universal"},
-    {name = "CONSOLE OPENER", status = "KEYLESS", type = "universal"},
-    {name = "DYNAMIC FLY", status = "KEYLESS", type = "universal"},
-    {name = "ANTI-AFK", status = "KEYLESS", type = "universal"},
-    {name = "LUCID EXECUTOR", status = "KEYLESS", type = "universal"},
-    {name = "KYAMI HUB", status = "KEYLESS", type = "fish training"},
-    {name = "KORAX RIVALS", status = "KEYLESS", type = "rivals"},
-    {name = "VOID HUB", status = "KEYLESS", type = "fluxo pvp"},
-    {name = "DAC CAU HUB", status = "KEYLESS", type = "blox fruits"},
-    {name = "GRAVITY HUB", status = "KEYLESS", type = "blox fruits"},
-    {name = "SPEED HUB", status = "KEYLESS", type = "blox fruits"},
-    {name = "VOIDHUB BOUNTY HUNT", status = "KEYLESS", type = "blox fruits"},
-    {name = "VOLARIS HUB", status = "KEYLESS", type = "paint a manga"},
-    {name = "MUNKEY HUB", status = "KEYLESS", type = "valley prison"},
-    {name = "FERBY HUB", status = "KEYLESS", type = "jujutsu shenanigans"},
-    {name = "AKIRA HUB", status = "KEYLESS", type = "jujutsu shenanigans"},
-    {name = "AURORA HUB", status = "KEYLESS", type = "99 nights"},
+local StaffList = {
+    {
+        username = "Rene_AiTest",
+        role = "ASPEC",
+        roleColor = Colors.gold,
+        iconId = "rbxassetid://139747252343501",
+        profile = "https://www.roblox.com/users/profile?username=Rene_AiTest",
+        bio = "Creator of Lion Hub.",
+        contributions = {"Lion Hub v1.0 to v8.1", "All script integrations", "UI/UX design", "Community management"}
+    }
 }
 
-local activeScripts = {}
+local function executeScriptUrl(url)
+    local code
+    local fetchOk, fetchErr = pcall(function()
+        if syn and syn.request then
+            code = syn.request({Url = url, Method = "GET"}).Body
+        elseif http_request then
+            code = http_request({Url = url, Method = "GET"}).Body
+        elseif request then
+            code = request({Url = url, Method = "GET"}).Body
+        else
+            code = game:HttpGet(url)
+        end
+    end)
+    if not fetchOk then error("Fetch failed: " .. tostring(fetchErr)) end
+    if not code or code == "" then error("Empty response") end
+    if #code < 50 then error("Response too short: " .. #code .. " bytes") end
+    local func, loadErr = loadstring(code)
+    if not func then error("Loadstring failed: " .. tostring(loadErr)) end
+    func()
+end
 
-local function createScriptCard(data, order)
-    local card = Instance.new("Frame")
-    card.Name = data.name
-    card.Size = UDim2.new(1, -5, 0, 66)
-    card.BackgroundColor3 = C.CardBg
+local ScriptRegistry = {}
+local ScriptData = {}
+local ActiveScripts = {}
+
+local ScriptList = {
+{"EVORA HUB","steal a brainrot","Full SAB executor","Lion Team",5,"https://orrxl4-protector.com/api/raw?id=ayajmho6","keyed"},
+{"ADAPT HUB","steal a brainrot","Auto-adapt + grab","Community",4,"https://orrxl4-protector.com/api/raw?id=jfy3b5bt","keyed"},
+{"KH ANTI LAG","steal a brainrot","Performance booster","KH Team",4,"https://orrxl4-protector.com/api/raw?id=5leunbfs","keyed"},
+{"ACE AUTO GRAB","steal a brainrot","Auto grab brainrots","Ace Team",5,"https://orrxl4-protector.com/api/raw?id=plw4wx0y","keyed"},
+{"UCT HUB","steal a brainrot","UCT Hub executor","UCT Team",4,"https://raw.githubusercontent.com/UCT-hub/main/refs/heads/main/stealabrainrot","keyed"},
+{"VANDER HUB","steal a brainrot","Auto grab animals","Vander",5,"https://sushix-protect-elite.onrender.com/raw/vanderhub.lua","keyed"},
+{"ICE HUB","steal a brainrot","Auto grab + semi invis","Ice Team",5,"https://api.luarmor.net/files/v4/loaders/a4731111c49fa76b7e545ac6f3d8a09a.lua","keyed"},
+{"CLOUDY FINDER","steal a brainrot","Cloudy finder","RexiScripts",4,"https://raw.githubusercontent.com/RexiScripts/Cloudy/refs/heads/main/Cloudy.lua","keyless"},
+{"CHILLI HUB","steal a brainrot","Spicy auto farm","Chili Team",4,"https://raw.githubusercontent.com/tienkhanh1/spicy/main/Chilli.lua","keyless"},
+{"SOURCES HUB","steal a brainrot","Sources hub","Sources",5,"https://orrxl4-protector.com/api/raw?id=u0x49v6u","keyed"},
+{"XLSQR SPEED","steal a brainrot","XLSQR speed","Illusion",4,"https://raw.githubusercontent.com/giunnalunna-eng/Speed-Xlsqr-/refs/heads/main/Illusionhubspeed","keyless"},
+{"SERVER DESTROYER V8","steal a brainrot","Server destroyer v8","TSK",4,"https://files.zvyz.live/scripts/Cracked/TSKSkids/SVD8_Crack.luau","keyless"},
+{"DRYNYX HUB","steal an egg","Instant steal + boss","DryNyx",5,"https://synex.lat/loaders/stealegg.lua","keyed"},
+{"YOKUDO HUB","steal an egg","Dr Scramble + drone","Yokudo",5,"https://raw.githubusercontent.com/betdoyvaka/stealanegg/main/Loader.lua","keyless"},
+{"NEVAHUB","steal an egg","Auto steal + godmode","NevaHub",4,"https://raw.githubusercontent.com/VEZ2/NEVAHUB/main/2","keyless"},
+{"JANE HUB","steal an egg","Auto steal + hatch + sell","Jane",5,"https://flowauth.net/v1/loaders/b88a6143b351d79f4c5a108ec33b5a2c.lua","keyed"},
+{"TSUO HUB","steal an egg","Fast instant steal + ring","Tsuo",5,"https://raw.githubusercontent.com/Tsuo7/TsuoHub/main/stealanegg","keyless"},
+{"UB HUB","steal an egg","Pet predictor + auto hatch","UB",5,"https://raw.githubusercontent.com/TeamUBHub/UBLoader/refs/heads/main/Loader.lua","keyless"},
+{"SENA HUB","steal an egg","Auto steal + rift boss","Sena",4,"https://raw.githubusercontent.com/senarblx/sena/refs/heads/main/loader","keyless"},
+{"ZEROIN HUB","steal an egg","Auto boss fight","Zeroin",5,"https://zeroinhub.com/api/script","keyed"},
+{"BLYXOHU HUB","steal an egg","Instant steal + auto event","BlyxoHu",5,"https://flowauth.net/v1/loaders/69d3463240384f3a73fbe32c178093a2.lua","keyed"},
+{"OXIDE HUB SAE","steal an egg","Autofarm + godmode","Oxide",5,"https://raw.githubusercontent.com/xulfo/Oxide-Loader/main/Main.lua","keyless"},
+{"MIRANDA HUB SAE","steal an egg","Instant steal + egg data","Miranda",4,"https://raw.githubusercontent.com/miirandahub/loader/refs/heads/main/stealaegg","keyless"},
+{"LENNON HUB SAE","steal an egg","Auto farm top eggs","Lennon",4,"https://api.jnkie.com/api/v1/luascripts/public/bf52181bce5c28e6ecd16eebfa1a88ddaf646c7acb10015fbaa7b30dc7bad0a8/download","keyless"},
+{"OMG HUB","steal an egg","Insta steal + godmode","OMG",4,"https://raw.githubusercontent.com/Omgshit/Scripts/main/MainLoader.lua","keyless"},
+{"RIFT HUB","steal an egg","Auto titan temple + god","Rift",5,"https://rifton.top/loader.lua","keyed"},
+{"PIG HUB","steal an egg","Auto steal + sell + ESP","Pig",4,"https://raw.githubusercontent.com/mopsscript7-gif/steal-an-egg/refs/heads/main/script.lua","keyless"},
+{"OVEI HUB","steal an egg","Auto steal + hatch","Ovei",4,"https://api.jnkie.com/api/v1/luascripts/public/f0b3ce85f588800ae7e46415fc4dd79ff2b0d09c9b6a8e19cea8a67b47f1bcbd/download","keyless"},
+{"BIGFROOT","steal an egg","Auto steal eggs free","BigFroot",4,"https://raw.githubusercontent.com/hanniii1/Loader/refs/heads/main/BFLoader.lua","keyless"},
+{"SOLIXHUB SAE","steal an egg","Godmode + weather predict","Solix",5,"https://solixhub.com/loader","keyed"},
+{"CHRONIXHUB","steal an egg","Auto farm + hatch","Chronix",4,"https://raw.githubusercontent.com/SmokeTY/Hidden-Scripts/main/Chronix%20Hub","keyless"},
+{"AJJANS HUB SAE","steal an egg","Pet spawner + mutation selector","Ajjan",5,"https://api.luarmor.net/files/v4/loaders/359e97f8618e9008afe5f496184ebb7c.lua","keyed"},
+{"SPEED X HUB SAE","steal an egg","Auto steal + more","AhmadV99",4,"https://raw.githubusercontent.com/AhmadV99/Speed-Hub-X/main/Speed%20Hub%20X.lua","keyless"},
+{"OUROBOROS HUB SAE","steal an egg","Auto steal + treadmill","Ouroboros",5,"https://raw.githubusercontent.com/joustingmatch/Ouroboros/main/loader.lua","keyless"},
+{"HOSHI HUB","sell lemons","Keyless sell lemons script","Fluxyyy333",5,"https://raw.githubusercontent.com/Fluxyyy333/HoshiOnTop/main/loader.lua","keyless"},
+{"LENNON HUB V4","steal an egg","NEW V4 SO OP","Lennon",5,"https://api.obscuravm.com/scripts/7432000531066434716","keyless"},
+{"ANTI HIT","steal an egg","Anti hit protection","Community",4,"https://pastefy.app/0GR9gni1/raw","keyless"},
+{"FABLE HUB","mm2","Auto farm + ESP + silent aim","Havickzi",5,"https://raw.githubusercontent.com/Havickzi/Rocket-script/refs/heads/main/Fable_Hub.lua","keyless"},
+{"KAZZ HUB","mm2","Silent aim + wallbang + ESP","Kazz",5,"https://api.jnkie.com/api/v1/loaders/public/353accd2d41a5a30c879705a8ff47926fab2c8b7d7baf34d31c0522b8c6c0a41/download","keyless"},
+{"OXIDE HUB MM2","mm2","Auto farm coins + gun ESP","Oxide",5,"https://raw.githubusercontent.com/xulfo/Oxide-Loader/main/Main.lua","keyless"},
+{"SLIX HUB","mm2","Autofarm + ESP + new update","Azura83",5,"https://raw.githubusercontent.com/Azura83/Murder-Mystery-2/refs/heads/main/Script.lua","keyless"},
+{"METAN HUB","mm2","Silent aim + anti fling","Metan",5,"https://raw.githubusercontent.com/Youdfff/MetanHub/refs/heads/main/moonveil.lua","keyless"},
+{"PRESTIGE HUB","mm2","Role ESP + kill aura + TP","Prestige",5,"https://raw.githubusercontent.com/rombik34/PRESTIGE/refs/heads/main/prestigeMM2%20(2).lua","keyless"},
+{"NEXUS HUB","mm2","ESP + farm + X-ray + fly","Nexus",5,"https://raw.githubusercontent.com/s-0-a-b/nexus/main/loadstring","keyless"},
+{"LUXURY HUB","ride a pet","Live eggs realtime + TP","LostInSyntaxx",5,"https://raw.githubusercontent.com/LostInSyntaxx/RideAPet/main/loader.lua","keyless"},
+{"HERTZ HUB","ride a pet","Egg glide + live egg","Nueveee999",5,"https://raw.githubusercontent.com/Nueveee999/Rideapet/main/ride.lua","keyless"},
+{"LARPHUB","ride a pet","Instant blackhole egg","LarpHub",5,"https://pastebin.com/raw/VPqrctbP","keyless"},
+{"SYNEROX HUB","ride a pet","Instant steal + auto hatch","Synerox",5,"https://synex.lat/loaders/ride-a-pet.lua","keyed"},
+{"OUROBOROS RAP","ride a pet","Auto pickup + place eggs","Ouroboros",5,"https://raw.githubusercontent.com/joustingmatch/Ouroboros/main/loader.lua","keyless"},
+{"JINHUB","jump for animals","Auto farm all + train x2","JinHub",5,"https://jinhub.my.id/scripts/Universal.lua","keyed"},
+{"OXIDE HUB JFA","jump for animals","Auto farm + place + hatch","Oxide",5,"https://raw.githubusercontent.com/xulfo/Oxide-Loader/main/Main.lua","keyless"},
+{"TORAHUB JFA","jump for animals","Steal rarity + train x2 + TP","ToraHub",4,"https://raw.githubusercontent.com/gumanba/Scripts/refs/heads/main/JumpforAnimals","keyless"},
+{"REDZ HUB BF","blox fruits","Full Blox Fruits toolkit","Redz",5,"https://raw.githubusercontent.com/tlredz/Scripts/refs/heads/main/main.luau","keyless"},
+{"GRAVITY HUB","blox fruits","Auto farm + raid","Gravity",5,"https://raw.githubusercontent.com/Dev-GravityHub/BloxFruit/refs/heads/main/Main.lua","keyless"},
+{"VOIDHUB BF","blox fruits","Bounty hunter","VoidTeam",5,"https://raw.githubusercontent.com/VoidDeveloper67/VoidHub/refs/heads/main/Void","keyless"},
+{"ZEN HUB BF","blox fruits","Bounty hunt + fruit sniper","Zen Team",5,"https://raw.githubusercontent.com/Zen-Hub/Zen-Hub/main/Zen-Hub.lua","keyless"},
+{"VOIDWARE HUB","bedwars","Voidware Bedwars","Voidware",5,"https://files.vapevoidware.xyz/VapeVoidware/VWRewrite/main/NewMainScript.lua","keyless"},
+{"NIGHT HUB BW","bedwars","Night hub rewrite","Warprbx",4,"https://raw.githubusercontent.com/warprbx/NightRewrite/refs/heads/main/Night/Loader.luau","keyless"},
+{"ALSPLOIT HUB","bedwars","AlSploit purple blast","AlSploit",4,"https://alsploit.bedwars.workers.dev/LoadstringAlSploitPurpleBlastReborn.lua","keyless"},
+{"NAJZ HUB","animal hospital","Najz animal hub","Najz",4,"https://raw.githubusercontent.com/najzgaming/Animal-hospital/refs/heads/main/AHA.lua","keyless"},
+{"TORA HUB AH","animal hospital","Tora hub","Gumanba",4,"https://raw.githubusercontent.com/gumanba/Scripts/refs/heads/main/AnimalHospital","keyless"},
+{"AREVLIK HUB","grow a garden 2","Arevlik hub","Arevlik",4,"https://pastebin.com/raw/itABLR4X","keyless"},
+{"ZINX HUB","grow a garden 2","Zinx hub","Zinx",4,"https://raw.githubusercontent.com/ninilolw-alt/Khngscript-Hub/refs/heads/main/Khngscript%20Hub","keyless"},
+{"MUNKEY HUB 99N","99 nights","Munkey hub","Munkey",4,"https://api.obscuravm.com/scripts/1871875863152597113","keyed"},
+{"AURORA HUB 99N","99 nights","99 Nights farm","Aurora",5,"https://api.jnkie.com/api/v1/luascripts/public/03773fb183aa5a86746312c830d62eb7f634e0064ca2565fe3585be062418697/download","keyless"},
+{"9NIGHTS","99 nights","Alternative tool","Community",4,"https://pastebin.com/raw/LPbPPNpC","keyless"},
+{"XENO DELTA","slayers 2","Full auto level + auto boss + insta kill","Xeno",5,"https://rawscripts.net/raw/Slayers-2-BEST-SCRIPT-XENO-DELTA-FULL-AUTO-LEVEL-AUTO-BOSS-INSTA-KILL-229299","keyless"},
+{"SNOWY HUB","slayers 2","80+ games, 1600+ features","Snowy",5,"https://rawscripts.net/raw/Universal-Script-Snowy-Hub-237438","keyed"},
+{"BEST AUTO FARM","slayers 2","Keyless all-in-one auto farm","Community",4,"https://rawscripts.net/raw/Slayers-2-Best-Auto-Farm-All-in-One-(KEYLESS)-229416","keyless"},
+{"SLAY HUB","slayers 2","Auto raid, quest, skill, level, fish","Slay",5,"https://rawscripts.net/raw/Slayers-2-Slay-hub-AUTORAID-AUTOQUEST-AUTOSKILL-AUTOLEVEL-AUTOFISH-229383","keyless"},
+{"SLOPIX HUB","slayers 2","Auto farm + everything","Slopix",4,"https://rawscripts.net/raw/Slayers-2-Slopix-Hub-or-Auto-Farm-and-Everything-229292","keyless"},
+{"INSTANT KILL","slayers 2","Insta kill + ESP + auto level + noclip","Community",5,"https://rawscripts.net/raw/Slayers-2-Instant-Kill-ESP-Auto-Level-Auto-Loot-Noclip-Webhooks-229600","keyless"},
+{"URANIUM","rivals","Silent aim + skinchanger","Uranium Team",5,"https://rawscripts.net/raw/RIVALS-Uranium-or-Free-Keyless-Script-227118","keyless"},
+{"OP RIVALS","rivals","Anticheat bypass + aimbot + triggerbot","Community",5,"https://rawscripts.net/raw/RIVALS-OP-or-Anticheat-bypass-aimbot-triggerbot-228535","keyless"},
+{"PRS HUB","rivals","Knife aura + ragebot","PRS",4,"https://rawscripts.net/raw/RIVALS-PRS-HUB-Knife-Aura-Ragebot-and-More-229585","keyed"},
+{"VELTRAX HUB","rivals","Veltrax rivals hub","Veltrax",4,"https://rawscripts.net/raw/RIVALS-Veltrax-Hub-229556","keyed"},
+{"REEFHUB","rivals","Aimbot + skin unlocker + ESP + autoplay","Reef",4,"https://rawscripts.net/raw/RIVALS-ReefHub-Aimbot-Skin-Unlocker-ESP-Auto-Play-and-More!-229547","keyed"},
+{"SPEED HUB ARS","arsenal","Speed hub arsenal","AhmadV99",4,"https://raw.githubusercontent.com/AhmadV99/Speed-Hub-X/main/Speed%20Hub%20X.lua","keyless"},
+{"NAIKO HUB","forsaken","Forsaken executor","Naiko",4,"https://naikoexploit.vercel.app/ForsakenPlus","keyed"},
+{"RISE HUB BB","blade ball","Blade Ball executor","Joshhhie",5,"https://raw.githubusercontent.com/joshhhie/rise/refs/heads/main/loader.lua","keyless"},
+{"REDZ HUB PS99","pet sim 99","Pet Sim 99 redz","Redz",5,"https://raw.githubusercontent.com/tlredz/Scripts/refs/heads/main/main.luau","keyless"},
+{"INFINITE YIELD","universal","Classic admin script","Edge",5,"https://raw.githubusercontent.com/EdgeIY/infiniteyield/master/source","keyless"},
+{"DYNAMIC FLY","universal","Smooth flight","Abbaaii",5,"https://raw.githubusercontent.com/aabbaaii13/aabbaaii/refs/heads/main/DynamicFly/DFly.lua","keyless"},
+{"ANTI-AFK","universal","Prevent idle kick","Luongday",5,"https://raw.githubusercontent.com/Luongdaynetroi/AntiAfk/refs/heads/main/Free/.lua","keyless"},
+{"SERVER HOP","universal","Hop Roblox servers","RegularVynixu",5,"https://raw.githubusercontent.com/RegularVynixu/Utilities/main/Server%20Hop/Script.lua","keyless"},
+{"REJOIN","universal","Quick rejoin","RegularVynixu",5,"https://raw.githubusercontent.com/RegularVynixu/Utilities/main/Rejoin%20Server/Script.lua","keyless"},
+{"SIMPLE SPY","universal","Simple remote spy","1201for",4,"https://raw.githubusercontent.com/1201for/V.G-Hub/main/SimpleSpy","keyless"},
+{"OXYGEN U","universal","Oxygen universal hub","iimurxi",5,"https://raw.githubusercontent.com/iimurxi/OxyU/refs/heads/main/OxyU.lua","keyless"},
+{"VAPE UNIVERSAL","universal","Vape V4 universal","7GrandDadPGN",5,"https://raw.githubusercontent.com/7GrandDadPGN/VapeV4ForRoblox/main/NewMainScript.lua","keyless"},
+{"SIMPLE ESP","esp","Simple ESP","1201for",4,"https://raw.githubusercontent.com/1201for/V.G-Hub/main/SimpleSpy","keyless"},
+{"UNIVERSAL AIM","aimbot","Universal aimbot","Community",4,"https://raw.githubusercontent.com/Joystickplays/psychic-octo-invention/main/yarhm.lua","keyless"},
+{"TROLL MENU 2","troll","Prank menu","RVNG",5,"https://raw.githubusercontent.com/RVNGG145/THEUPDATEFROMTROLLMENU/refs/heads/main/updatedtrollmenu","keyless"},
+{"REMOTE SPY","spy / remote","Remote spy tool","1201for",4,"https://raw.githubusercontent.com/1201for/V.G-Hub/main/SimpleSpy","keyless"},
+{"RAYFIELD UI","ui libs","Rayfield UI library","Sirius",5,"https://sirius.menu/rayfield","keyless"},
+{"DARK DEX","special","Full game explorer","Perfectus",5,"https://raw.githubusercontent.com/perfectusmim1/darkdex/refs/heads/main/darkdexp","keyless"},
+{"MIIA HUB","leaked","Leaked auto-steal grab","Miia",4,"https://raw.githubusercontent.com/abiendorein-web/MilaHub/refs/heads/main/MilaAutoStealGrabSemi","keyless"}
+}
+
+for _, entry in ipairs(ScriptList) do
+    local name, gameType, description, developer, rating, url, keyStatus = entry[1], entry[2], entry[3], entry[4], entry[5], entry[6], entry[7]
+    ScriptRegistry[name] = {url = url}
+    table.insert(ScriptData, {
+        name = name,
+        type = gameType,
+        status = "working",
+        description = description,
+        developer = developer,
+        rating = rating,
+        keyStatus = keyStatus or "keyless"
+    })
+end
+
+print("[LION HUB] Loaded " .. VERSION .. " - " .. #ScriptList .. " scripts")
+
+local function makePill(text, color, parent, xOffset)
+    local pill = Instance.new("Frame", parent)
+    pill.Position = UDim2.new(0, xOffset, 0, 34)
+    pill.Size = UDim2.new(0, #text * 7 + 14, 0, 16)
+    pill.BackgroundColor3 = color
+    pill.BackgroundTransparency = 0.75
+    pill.BorderSizePixel = 0
+    pill.ZIndex = 17
+    addScaleCorner(pill, 0.5)
+    addStroke(pill, 1, color)
+    local label = Instance.new("TextLabel", pill)
+    label.Size = UDim2.new(1, 0, 1, 0)
+    label.BackgroundTransparency = 1
+    label.Font = Enum.Font.GothamBold
+    label.Text = text
+    label.TextColor3 = color
+    label.TextSize = 9
+    label.ZIndex = 18
+    return pill
+end
+
+local function makeScriptCard(data, order)
+    local card = Instance.new("Frame", ScriptScroll)
+    card.Size = UDim2.new(1, -5, 0, 76)
+    card.BackgroundColor3 = Colors.card
+    card.BackgroundTransparency = 0.03
     card.BorderSizePixel = 0
     card.ZIndex = 16
     card.LayoutOrder = order
-    card.Parent = ScrollingFrame
-    corner(card, 10)
-    
-    local cardStroke = stroke(card, 1, C.Border)
-    local cardGrad = Instance.new("UIGradient")
-    cardGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0.00, C.Yellow),
-        ColorSequenceKeypoint.new(0.25, C.White),
-        ColorSequenceKeypoint.new(0.50, C.Yellow),
-        ColorSequenceKeypoint.new(0.75, C.White),
-        ColorSequenceKeypoint.new(1.00, C.Yellow),
+    addCorner(card, 10)
+
+    local cardStroke = addStroke(card, 1, Colors.border)
+    local cardGradient = addGradient(cardStroke, {
+        ColorSequenceKeypoint.new(0, Colors.yellow),
+        ColorSequenceKeypoint.new(0.25, Colors.white),
+        ColorSequenceKeypoint.new(0.5, Colors.yellow),
+        ColorSequenceKeypoint.new(0.75, Colors.white),
+        ColorSequenceKeypoint.new(1, Colors.yellow)
     })
-    cardGrad.Rotation = 0
-    cardGrad.Parent = cardStroke
 
-    local cardPulseT = 0
     RunService.RenderStepped:Connect(function(dt)
-        if not (card and card.Parent) then return end
-        cardPulseT = cardPulseT + dt
-        cardGrad.Rotation = (cardGrad.Rotation + 40 * dt) % 360
-        cardStroke.Transparency = 0.2 + (math.sin(cardPulseT * 2.5) + 1) * 0.2
-    end)
-    
-    local title = Instance.new("TextLabel")
-    title.Size = UDim2.new(1, -20, 0, 20)
-    title.Position = UDim2.new(0, 12, 0, 12)
-    title.BackgroundTransparency = 1
-    title.Font = Enum.Font.GothamBold
-    title.Text = data.name
-    title.TextColor3 = C.White
-    title.TextSize = 13
-    title.TextXAlignment = Enum.TextXAlignment.Left
-    title.ZIndex = 17
-    title.Parent = card
-
-    local statusIndicator = Instance.new("TextLabel")
-    statusIndicator.Size = UDim2.new(0, 70, 0, 16)
-    statusIndicator.Position = UDim2.new(0, 12, 0, 36)
-    statusIndicator.BackgroundTransparency = 1
-    statusIndicator.Font = Enum.Font.GothamBold
-    statusIndicator.Text = data.status
-    statusIndicator.TextSize = 11
-    statusIndicator.TextXAlignment = Enum.TextXAlignment.Left
-    statusIndicator.ZIndex = 17
-    statusIndicator.Parent = card
-    
-    local statusStroke = Instance.new("UIStroke")
-    statusStroke.Thickness = 0
-    statusStroke.Parent = statusIndicator
-
-    local statusPulseT = 0
-    local statusColor = (data.status == "KEYLESS") and C.GreenGlow or C.Yellow
-    
-    RunService.RenderStepped:Connect(function(dt)
-        if not (statusIndicator and statusIndicator.Parent) then return end
-        statusPulseT = statusPulseT + dt
-        local pulseAlpha = (math.sin(statusPulseT * 3) + 1) / 2
-        statusIndicator.TextColor3 = statusColor:Lerp(C.White, pulseAlpha * 0.3)
-        statusStroke.Transparency = 0.2 + pulseAlpha * 0.5
+        if Settings.performance or not card.Parent then return end
+        cardGradient.Rotation = (cardGradient.Rotation + 40 * dt) % 360
     end)
 
-    local execBaseSize = UDim2.new(0, 80, 0, 30)
-    local execBasePos = UDim2.new(1, -90, 0.5, -15)
-    
-    local execBtn = Instance.new("TextButton")
-    execBtn.Name = "ExecBtn"
-    execBtn.Position = execBasePos
-    execBtn.Size = execBaseSize
-    execBtn.BackgroundColor3 = C.Yellow
-    execBtn.BorderSizePixel = 0
-    execBtn.AutoButtonColor = false
-    execBtn.Font = Enum.Font.GothamBlack
-    execBtn.Text = "EXECUTE"
-    execBtn.TextColor3 = Color3.fromRGB(12, 12, 16)
-    execBtn.TextSize = 10
-    execBtn.ZIndex = 17
-    execBtn.Parent = card
-    corner(execBtn, 8)
-    
-    local execGrad = Instance.new("UIGradient")
-    execGrad.Color = ColorSequence.new({
-        ColorSequenceKeypoint.new(0, C.YellowBright),
-        ColorSequenceKeypoint.new(1, C.Yellow),
-    })
-    execGrad.Rotation = 90
-    execGrad.Parent = execBtn
-    
-    hoverScale(execBtn, execBaseSize, execBasePos, 4)
-    
-    execBtn.MouseButton1Click:Connect(function()
-        if activeScripts[data.name] then return end
-        activeScripts[data.name] = true
-        
-        local execFunction = ScriptRegistry[data.name]
-        if not execFunction then
-            execBtn.Text = "NO LOGIC"
+    card.MouseEnter:Connect(function()
+        TweenService:Create(card, FastTween, {Size = UDim2.new(1, -1, 0, 78), Position = UDim2.new(0, -2, 0, -1)}):Play()
+        TweenService:Create(cardStroke, FastTween, {Transparency = 0.05}):Play()
+    end)
+    card.MouseLeave:Connect(function()
+        TweenService:Create(card, FastTween, {Size = UDim2.new(1, -5, 0, 76), Position = UDim2.new(0, 0, 0, 0)}):Play()
+        TweenService:Create(cardStroke, FastTween, {Transparency = 0.2}):Play()
+    end)
+
+    local starButton = Instance.new("TextButton", card)
+    starButton.Size = UDim2.new(0, 22, 0, 22)
+    starButton.Position = UDim2.new(0, 12, 0, 16)
+    starButton.BackgroundTransparency = 1
+    starButton.AutoButtonColor = false
+    starButton.Font = Enum.Font.GothamBold
+    starButton.Text = isFavorite(data.name) and "*" or "o"
+    starButton.TextColor3 = isFavorite(data.name) and Colors.yellow or Colors.dim
+    starButton.TextSize = 18
+    starButton.ZIndex = 20
+
+    starButton.MouseButton1Click:Connect(function()
+        toggleFavorite(data.name)
+        starButton.Text = isFavorite(data.name) and "*" or "o"
+        starButton.TextColor3 = isFavorite(data.name) and Colors.yellow or Colors.dim
+        updateTabCounters()
+        if currentTab == "FAVORITE" then filterScripts("FAVORITE") end
+    end)
+
+    local dotHolder = Instance.new("Frame", card)
+    dotHolder.AnchorPoint = Vector2.new(0.5, 0.5)
+    dotHolder.Position = UDim2.new(0, 25, 0, 50)
+    dotHolder.Size = UDim2.new(0, 24, 0, 24)
+    dotHolder.BackgroundTransparency = 1
+    dotHolder.ZIndex = 19
+
+    local statusBloom = Instance.new("Frame", dotHolder)
+    statusBloom.AnchorPoint = Vector2.new(0.5, 0.5)
+    statusBloom.Position = UDim2.new(0.5, 0, 0.5, 0)
+    statusBloom.Size = UDim2.new(0, 14, 0, 14)
+    statusBloom.BackgroundColor3 = Colors.greenGlow
+    statusBloom.BackgroundTransparency = 0.6
+    statusBloom.BorderSizePixel = 0
+    statusBloom.ZIndex = 18
+    addCorner(statusBloom, 99)
+
+    local statusDot = Instance.new("Frame", dotHolder)
+    statusDot.AnchorPoint = Vector2.new(0.5, 0.5)
+    statusDot.Position = UDim2.new(0.5, 0, 0.5, 0)
+    statusDot.Size = UDim2.new(0, 8, 0, 8)
+    statusDot.BackgroundColor3 = Colors.greenGlow
+    statusDot.BorderSizePixel = 0
+    statusDot.ZIndex = 20
+    addCorner(statusDot, 99)
+
+    task.spawn(function()
+        while dotHolder.Parent do
+            if Settings.performance then
+                task.wait(1)
+            else
+                local ring = Instance.new("Frame", dotHolder)
+                ring.AnchorPoint = Vector2.new(0.5, 0.5)
+                ring.Position = UDim2.new(0.5, 0, 0.5, 0)
+                ring.Size = UDim2.new(0, 8, 0, 8)
+                ring.BackgroundTransparency = 1
+                ring.BorderSizePixel = 0
+                ring.ZIndex = 17
+                addCorner(ring, 99)
+                local ringStroke = addStroke(ring, 1.5, Colors.greenGlow)
+                ringStroke.Transparency = 0.2
+                TweenService:Create(ring, TweenInfo.new(1.6, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(0, 22, 0, 22)}):Play()
+                TweenService:Create(ringStroke, TweenInfo.new(1.6), {Transparency = 1}):Play()
+                task.delay(1.7, function() pcall(function() ring:Destroy() end) end)
+                task.wait(2)
+            end
+        end
+    end)
+
+    task.spawn(function()
+        while statusBloom.Parent do
+            if Settings.performance then
+                task.wait(1)
+            else
+                TweenService:Create(statusBloom, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Size = UDim2.new(0, 18, 0, 18), BackgroundTransparency = 0.75}):Play()
+                task.wait(1.5)
+                if not statusBloom.Parent then break end
+                TweenService:Create(statusBloom, TweenInfo.new(1.5, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Size = UDim2.new(0, 14, 0, 14), BackgroundTransparency = 0.5}):Play()
+                task.wait(1.5)
+            end
+        end
+    end)
+
+    local titleLabel = Instance.new("TextLabel", card)
+    titleLabel.Size = UDim2.new(1, -120, 0, 18)
+    titleLabel.Position = UDim2.new(0, 42, 0, 14)
+    titleLabel.BackgroundTransparency = 1
+    titleLabel.Font = Enum.Font.GothamBold
+    titleLabel.Text = data.name
+    titleLabel.TextColor3 = Colors.white
+    titleLabel.TextSize = 13
+    titleLabel.TextXAlignment = Enum.TextXAlignment.Left
+    titleLabel.TextTruncate = Enum.TextTruncate.AtEnd
+    titleLabel.ZIndex = 17
+
+    makePill("WORKING", Colors.greenGlow, card, 42)
+    local isKeyless = data.keyStatus == "keyless"
+    makePill(isKeyless and "KEYLESS" or "KEYED", isKeyless and Colors.cyan or Colors.gold, card, 108)
+
+    local descLabel = Instance.new("TextLabel", card)
+    descLabel.Size = UDim2.new(1, -120, 0, 14)
+    descLabel.Position = UDim2.new(0, 42, 0, 54)
+    descLabel.BackgroundTransparency = 1
+    descLabel.Font = Enum.Font.Gotham
+    descLabel.Text = data.description or ""
+    descLabel.TextColor3 = Colors.dim
+    descLabel.TextSize = 9
+    descLabel.TextXAlignment = Enum.TextXAlignment.Left
+    descLabel.TextTruncate = Enum.TextTruncate.AtEnd
+    descLabel.ZIndex = 17
+
+    local progressBg = Instance.new("Frame", card)
+    progressBg.Size = UDim2.new(0, 200, 0, 2)
+    progressBg.Position = UDim2.new(0, 42, 0, 72)
+    progressBg.BackgroundColor3 = Color3.fromRGB(40, 40, 50)
+    progressBg.BorderSizePixel = 0
+    progressBg.BackgroundTransparency = 1
+    progressBg.ZIndex = 18
+    addCorner(progressBg, 2)
+
+    local progressBar = Instance.new("Frame", progressBg)
+    progressBar.Size = UDim2.new(0, 0, 1, 0)
+    progressBar.BackgroundColor3 = Colors.green
+    progressBar.BorderSizePixel = 0
+    progressBar.ZIndex = 19
+    addCorner(progressBar, 2)
+    addGradient(progressBar, {ColorSequenceKeypoint.new(0, Colors.green), ColorSequenceKeypoint.new(1, Colors.yellow)})
+
+    local executeButton = Instance.new("TextButton", card)
+    executeButton.AnchorPoint = Vector2.new(1, 0.5)
+    executeButton.Position = UDim2.new(1, -12, 0.5, 0)
+    executeButton.Size = UDim2.new(0, 82, 0, 32)
+    executeButton.BackgroundColor3 = Colors.yellow
+    executeButton.BorderSizePixel = 0
+    executeButton.AutoButtonColor = false
+    executeButton.Font = Enum.Font.GothamBlack
+    executeButton.Text = "EXECUTE"
+    executeButton.TextColor3 = Color3.fromRGB(12, 12, 16)
+    executeButton.TextSize = 10
+    executeButton.ZIndex = 18
+    addCorner(executeButton, 8)
+
+    executeButton.MouseButton1Click:Connect(function()
+        if ActiveScripts[data.name] then return end
+        ActiveScripts[data.name] = true
+        local entry = ScriptRegistry[data.name]
+        if not entry or not entry.url then
+            playSound("fail", 0.5)
+            executeButton.Text = "NO URL"
             task.wait(1)
-            execBtn.Text = "EXECUTE"
-            activeScripts[data.name] = nil
+            executeButton.Text = "EXECUTE"
+            ActiveScripts[data.name] = nil
             return
         end
-        
-        execBtn.Text = "..."
-        
+        if isKeyless then playSound("execute", 0.5) else playSound("keyWarn", 0.5) end
+        executeButton.Text = "RUNNING"
+        TweenService:Create(executeButton, FastTween, {BackgroundColor3 = Colors.green}):Play()
+        progressBg.BackgroundTransparency = 0
+        progressBar.Size = UDim2.new(0, 0, 1, 0)
+        TweenService:Create(progressBar, TweenInfo.new(0.5, Enum.EasingStyle.Quad, Enum.EasingDirection.Out), {Size = UDim2.new(0.7, 0, 1, 0)}):Play()
+        TweenService:Create(cardStroke, TweenInfo.new(0.3), {Transparency = 0, Thickness = 2, Color = Colors.yellow}):Play()
         task.spawn(function()
-            local success, err = pcall(execFunction)
-            task.wait(1.5)
-            
-            if not success then
-                warn("[LION HUB] Execution Error: " .. tostring(err))
+            local success, err = pcall(function() executeScriptUrl(entry.url) end)
+            TweenService:Create(progressBar, TweenInfo.new(0.3), {Size = UDim2.new(1, 0, 1, 0)}):Play()
+            if success then
+                playSound("success", 0.5)
+                executeButton.Text = "LOADED"
+                addToHistory(data.name)
+                showToast("Loaded: " .. data.name, Colors.green, "OK")
+                task.wait(0.6)
+            else
+                playSound("fail", 0.5)
+                executeButton.Text = "ERROR"
+                TweenService:Create(executeButton, FastTween, {BackgroundColor3 = Colors.red}):Play()
+                warn("[LION HUB] " .. data.name .. " - " .. tostring(err))
+                showToast("Failed: " .. data.name, Colors.red, "X")
+                task.wait(0.8)
             end
-            
-            execBtn.Text = "EXECUTE"
-            activeScripts[data.name] = nil
+            progressBg.BackgroundTransparency = 1
+            TweenService:Create(cardStroke, TweenInfo.new(0.3), {Transparency = 0.2, Thickness = 1, Color = Colors.border}):Play()
+            TweenService:Create(executeButton, FastTween, {BackgroundColor3 = Colors.yellow}):Play()
+            executeButton.Text = "EXECUTE"
+            ActiveScripts[data.name] = nil
         end)
     end)
-    
+
     return card
 end
 
-local function filterScripts(tabName)
+local function makeLeaderboard()
+    local frame = Instance.new("Frame", ScriptScroll)
+    frame.Size = UDim2.new(1, -5, 0, 300)
+    frame.BackgroundColor3 = Colors.card
+    frame.BorderSizePixel = 0
+    frame.ZIndex = 16
+    frame.LayoutOrder = 1
+    addCorner(frame, 12)
+    addStroke(frame, 1.5, Colors.gold)
+    local title = Instance.new("TextLabel", frame)
+    title.Size = UDim2.new(1, -24, 0, 28)
+    title.Position = UDim2.new(0, 12, 0, 12)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBlack
+    title.Text = "LION HUB STAFF"
+    title.TextColor3 = Colors.gold
+    title.TextSize = 16
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.ZIndex = 17
+    local staff = StaffList[1]
+    local card = Instance.new("Frame", frame)
+    card.Size = UDim2.new(1, -24, 0, 190)
+    card.Position = UDim2.new(0, 12, 0, 50)
+    card.BackgroundColor3 = Colors.background
+    card.BorderSizePixel = 0
+    card.ZIndex = 17
+    addCorner(card, 12)
+    addStroke(card, 2, staff.roleColor)
+    local iconBox = Instance.new("Frame", card)
+    iconBox.Size = UDim2.new(0, 80, 0, 80)
+    iconBox.Position = UDim2.new(0, 14, 0, 14)
+    iconBox.BackgroundColor3 = Colors.control
+    iconBox.BorderSizePixel = 0
+    iconBox.ZIndex = 18
+    addCorner(iconBox, 12)
+    addStroke(iconBox, 2.5, staff.roleColor)
+    local icon = Instance.new("ImageLabel", iconBox)
+    icon.Size = UDim2.new(1, -6, 1, -6)
+    icon.Position = UDim2.new(0, 3, 0, 3)
+    icon.BackgroundTransparency = 1
+    icon.Image = staff.iconId
+    icon.ZIndex = 20
+    addCorner(icon, 10)
+    local usernameLabel = Instance.new("TextLabel", card)
+    usernameLabel.Size = UDim2.new(1, -110, 0, 22)
+    usernameLabel.Position = UDim2.new(0, 106, 0, 20)
+    usernameLabel.BackgroundTransparency = 1
+    usernameLabel.Font = Enum.Font.GothamBlack
+    usernameLabel.Text = staff.username
+    usernameLabel.TextColor3 = Colors.white
+    usernameLabel.TextSize = 15
+    usernameLabel.TextXAlignment = Enum.TextXAlignment.Left
+    usernameLabel.ZIndex = 19
+    local roleBadge = Instance.new("TextLabel", card)
+    roleBadge.Size = UDim2.new(0, 200, 0, 20)
+    roleBadge.Position = UDim2.new(0, 106, 0, 48)
+    roleBadge.BackgroundColor3 = staff.roleColor
+    roleBadge.BorderSizePixel = 0
+    roleBadge.Font = Enum.Font.GothamBold
+    roleBadge.Text = staff.role
+    roleBadge.TextColor3 = Color3.fromRGB(20, 20, 20)
+    roleBadge.TextSize = 10
+    roleBadge.ZIndex = 19
+    addCorner(roleBadge, 6)
+    local bioLabel = Instance.new("TextLabel", card)
+    bioLabel.Size = UDim2.new(1, -110, 0, 36)
+    bioLabel.Position = UDim2.new(0, 106, 0, 76)
+    bioLabel.BackgroundTransparency = 1
+    bioLabel.Font = Enum.Font.Gotham
+    bioLabel.Text = staff.bio or ""
+    bioLabel.TextColor3 = Colors.white
+    bioLabel.TextSize = 11
+    bioLabel.TextWrapped = true
+    bioLabel.TextXAlignment = Enum.TextXAlignment.Left
+    bioLabel.TextYAlignment = Enum.TextYAlignment.Top
+    bioLabel.ZIndex = 18
+    for index, contribution in ipairs(staff.contributions or {}) do
+        if index > 4 then break end
+        local line = Instance.new("TextLabel", card)
+        line.Size = UDim2.new(1, -50, 0, 14)
+        line.Position = UDim2.new(0, 22, 0, 124 + (index - 1) * 14)
+        line.BackgroundTransparency = 1
+        line.Font = Enum.Font.Gotham
+        line.Text = "- " .. contribution
+        line.TextColor3 = Colors.dim
+        line.TextSize = 10
+        line.TextXAlignment = Enum.TextXAlignment.Left
+        line.ZIndex = 18
+    end
+end
+
+local function makeSettings()
+    local frame = Instance.new("Frame", ScriptScroll)
+    frame.Size = UDim2.new(1, -5, 0, 600)
+    frame.BackgroundColor3 = Colors.card
+    frame.BorderSizePixel = 0
+    frame.ZIndex = 16
+    frame.LayoutOrder = 1
+    addCorner(frame, 12)
+    addStroke(frame, 1.5, Colors.yellow)
+    local title = Instance.new("TextLabel", frame)
+    title.Size = UDim2.new(1, -24, 0, 26)
+    title.Position = UDim2.new(0, 12, 0, 12)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBlack
+    title.Text = "SETTINGS"
+    title.TextColor3 = Colors.yellow
+    title.TextSize = 16
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.ZIndex = 17
+    local yOffset = 50
+    local function settingOption(text, subtitle, callback, highlight)
+        local button = Instance.new("TextButton", frame)
+        button.Size = UDim2.new(1, -24, 0, 36)
+        button.Position = UDim2.new(0, 12, 0, yOffset)
+        button.BackgroundColor3 = Colors.control
+        button.BorderSizePixel = 0
+        button.AutoButtonColor = false
+        button.Text = ""
+        button.ZIndex = 17
+        addCorner(button, 8)
+        addStroke(button, 1, Colors.border)
+        local label = Instance.new("TextLabel", button)
+        label.Size = UDim2.new(1, -20, 0, 18)
+        label.Position = UDim2.new(0, 12, 0, 3)
+        label.BackgroundTransparency = 1
+        label.Font = Enum.Font.GothamBold
+        label.Text = text
+        label.TextColor3 = highlight or Colors.white
+        label.TextSize = 11
+        label.TextXAlignment = Enum.TextXAlignment.Left
+        label.ZIndex = 18
+        if subtitle then
+            local sub = Instance.new("TextLabel", button)
+            sub.Size = UDim2.new(1, -20, 0, 12)
+            sub.Position = UDim2.new(0, 12, 0, 21)
+            sub.BackgroundTransparency = 1
+            sub.Font = Enum.Font.Gotham
+            sub.Text = subtitle
+            sub.TextColor3 = Colors.dim
+            sub.TextSize = 9
+            sub.TextXAlignment = Enum.TextXAlignment.Left
+            sub.ZIndex = 18
+        end
+        button.MouseButton1Click:Connect(function()
+            playSound("click")
+            callback()
+        end)
+        yOffset = yOffset + 42
+    end
+    settingOption("Lo-fi Music: " .. (Settings.lofiOn and "ON" or "OFF"), "Chill beats while hub open", function()
+        Settings.lofiOn = not Settings.lofiOn
+        saveJson("LionHub_Settings.json", Settings)
+        if Settings.lofiOn and MainFrame.Visible then startLofi() else stopLofi() end
+        showToast("Lo-fi: " .. (Settings.lofiOn and "ON" or "OFF"), Colors.yellow, "M")
+    end)
+    settingOption("Shooting Stars: " .. (Settings.backgroundOn ~= false and "ON" or "OFF"), "Background effect", function()
+        Settings.backgroundOn = not (Settings.backgroundOn ~= false)
+        saveJson("LionHub_Settings.json", Settings)
+        showToast("Stars: " .. (Settings.backgroundOn and "ON" or "OFF"), Colors.green, "*")
+    end)
+    settingOption("Tips: " .. (Settings.tipsOn ~= false and "ON" or "OFF"), "Rotating tips bar", function()
+        Settings.tipsOn = not (Settings.tipsOn ~= false)
+        saveJson("LionHub_Settings.json", Settings)
+        showToast("Tips: " .. (Settings.tipsOn and "ON" or "OFF"), Colors.green, "?")
+    end)
+    settingOption("Motion Blur: " .. (Settings.motionBlur ~= false and "ON" or "OFF"), "Ghost trail on drag", function()
+        Settings.motionBlur = not (Settings.motionBlur ~= false)
+        saveJson("LionHub_Settings.json", Settings)
+        showToast("Blur: " .. (Settings.motionBlur and "ON" or "OFF"), Colors.green, "B")
+    end)
+    settingOption("Performance: " .. (Settings.performance and "ON" or "OFF"), "Disables animations", function()
+        Settings.performance = not Settings.performance
+        saveJson("LionHub_Settings.json", Settings)
+        showToast("Perf: " .. (Settings.performance and "ON" or "OFF"), Colors.green, "P")
+    end)
+    settingOption("Sound: " .. (soundEnabled and "ON" or "OFF"), "All sounds toggle", function()
+        soundEnabled = not soundEnabled
+        Settings.soundOn = soundEnabled
+        saveJson("LionHub_Settings.json", Settings)
+        if not soundEnabled then stopLofi() end
+        showToast("Sound: " .. (soundEnabled and "ON" or "OFF"), Colors.green, "S")
+    end)
+    settingOption("Clear Favorites", "Removes all", function()
+        Favorites = {}
+        saveJson("LionHub_Favorites.json", Favorites)
+        updateTabCounters()
+        showToast("Favorites cleared", Colors.red, "X")
+    end, Colors.red)
+    settingOption("Clear History", "Removes all", function()
+        History = {}
+        saveJson("LionHub_History.json", History)
+        updateTabCounters()
+        showToast("History cleared", Colors.red, "X")
+    end, Colors.red)
+end
+
+local function makeInfo()
+    local frame = Instance.new("Frame", ScriptScroll)
+    frame.Size = UDim2.new(1, -5, 0, 280)
+    frame.BackgroundColor3 = Colors.card
+    frame.BorderSizePixel = 0
+    frame.ZIndex = 16
+    frame.LayoutOrder = 1
+    addCorner(frame, 12)
+    addStroke(frame, 1, Colors.border)
+    local title = Instance.new("TextLabel", frame)
+    title.Size = UDim2.new(1, -24, 0, 24)
+    title.Position = UDim2.new(0, 12, 0, 12)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBlack
+    title.Text = "LION HUB - INFO"
+    title.TextColor3 = Colors.yellow
+    title.TextSize = 16
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.ZIndex = 17
+    local body = Instance.new("TextLabel", frame)
+    body.Size = UDim2.new(1, -24, 0, 70)
+    body.Position = UDim2.new(0, 12, 0, 42)
+    body.BackgroundTransparency = 1
+    body.Font = Enum.Font.Gotham
+    body.Text = "LION HUB - keyless, always free, always updated. Never asks for a key. Never logs your account."
+    body.TextColor3 = Colors.white
+    body.TextSize = 11
+    body.TextWrapped = true
+    body.TextXAlignment = Enum.TextXAlignment.Left
+    body.TextYAlignment = Enum.TextYAlignment.Top
+    body.ZIndex = 17
+    local stats = Instance.new("TextLabel", frame)
+    stats.Size = UDim2.new(1, -24, 0, 90)
+    stats.Position = UDim2.new(0, 12, 0, 130)
+    stats.BackgroundTransparency = 1
+    stats.Font = Enum.Font.GothamBold
+    stats.Text = "Version: v" .. VERSION .. "\nScripts: " .. #ScriptData .. "\nCategories: " .. #TabStructure .. "\nStaff: " .. #StaffList
+    stats.TextColor3 = Colors.yellowBright
+    stats.TextSize = 11
+    stats.TextXAlignment = Enum.TextXAlignment.Left
+    stats.TextYAlignment = Enum.TextYAlignment.Top
+    stats.ZIndex = 17
+end
+
+local function makeHistory()
+    local frame = Instance.new("Frame", ScriptScroll)
+    frame.Size = UDim2.new(1, -5, 0, 60 + math.max(1, #History) * 26)
+    frame.BackgroundColor3 = Colors.card
+    frame.BorderSizePixel = 0
+    frame.ZIndex = 16
+    frame.LayoutOrder = 1
+    addCorner(frame, 12)
+    addStroke(frame, 1, Colors.border)
+    local title = Instance.new("TextLabel", frame)
+    title.Size = UDim2.new(1, -24, 0, 24)
+    title.Position = UDim2.new(0, 12, 0, 12)
+    title.BackgroundTransparency = 1
+    title.Font = Enum.Font.GothamBlack
+    title.Text = "EXECUTION HISTORY"
+    title.TextColor3 = Colors.yellow
+    title.TextSize = 14
+    title.TextXAlignment = Enum.TextXAlignment.Left
+    title.ZIndex = 17
+    if #History == 0 then
+        local empty = Instance.new("TextLabel", frame)
+        empty.Size = UDim2.new(1, -24, 0, 30)
+        empty.Position = UDim2.new(0, 12, 0, 44)
+        empty.BackgroundTransparency = 1
+        empty.Font = Enum.Font.Gotham
+        empty.Text = "No scripts executed yet."
+        empty.TextColor3 = Colors.dim
+        empty.TextSize = 11
+        empty.TextXAlignment = Enum.TextXAlignment.Left
+        empty.ZIndex = 17
+    else
+        for index, entry in ipairs(History) do
+            if index > 20 then break end
+            local row = Instance.new("Frame", frame)
+            row.Size = UDim2.new(1, -24, 0, 22)
+            row.Position = UDim2.new(0, 12, 0, 44 + (index - 1) * 26)
+            row.BackgroundColor3 = Colors.control
+            row.BorderSizePixel = 0
+            row.ZIndex = 17
+            addCorner(row, 6)
+            local nameLabel = Instance.new("TextLabel", row)
+            nameLabel.Size = UDim2.new(1, -130, 1, 0)
+            nameLabel.Position = UDim2.new(0, 10, 0, 0)
+            nameLabel.BackgroundTransparency = 1
+            nameLabel.Font = Enum.Font.GothamBold
+            nameLabel.Text = entry.name
+            nameLabel.TextColor3 = Colors.white
+            nameLabel.TextSize = 10
+            nameLabel.TextXAlignment = Enum.TextXAlignment.Left
+            nameLabel.ZIndex = 18
+            local timeLabel = Instance.new("TextLabel", row)
+            timeLabel.Size = UDim2.new(0, 110, 1, 0)
+            timeLabel.Position = UDim2.new(1, -120, 0, 0)
+            timeLabel.BackgroundTransparency = 1
+            timeLabel.Font = Enum.Font.Gotham
+            timeLabel.Text = tostring(entry.time)
+            timeLabel.TextColor3 = Colors.dim
+            timeLabel.TextSize = 9
+            timeLabel.TextXAlignment = Enum.TextXAlignment.Right
+            timeLabel.ZIndex = 18
+        end
+    end
+end
+
+local function filterScripts(tabName, searchQuery)
     local targetType = string.lower(tabName)
+    local query = (searchQuery and searchQuery ~= "") and string.lower(searchQuery) or nil
+    for _, child in ipairs(ScriptScroll:GetChildren()) do
+        if child:IsA("Frame") then child:Destroy() end
+    end
+    if targetType == "leaderboard" then makeLeaderboard() CountLabel.Text = "Lion Hub Staff" ScriptScroll.CanvasPosition = Vector2.new(0, 0) return end
+    if targetType == "settings" then makeSettings() CountLabel.Text = "Settings" ScriptScroll.CanvasPosition = Vector2.new(0, 0) return end
+    if targetType == "info" then makeInfo() CountLabel.Text = "" ScriptScroll.CanvasPosition = Vector2.new(0, 0) return end
+    if targetType == "history" then makeHistory() CountLabel.Text = "Recent executions" ScriptScroll.CanvasPosition = Vector2.new(0, 0) return end
+    local matched = {}
+    for _, data in ipairs(ScriptData) do
+        local isMatch = true
+        if query then
+            if query == "keyless" then isMatch = data.keyStatus == "keyless"
+            elseif query == "keyed" then isMatch = data.keyStatus == "keyed"
+            elseif query == "fav" then isMatch = isFavorite(data.name)
+            else isMatch = string.find(string.lower(data.name), query, 1, true) ~= nil end
+        end
+        if isMatch then
+            if targetType == "favorite" then isMatch = isFavorite(data.name)
+            else isMatch = data.type == targetType end
+        end
+        if isMatch then table.insert(matched, data) end
+    end
+    if currentSort == "az" then
+        table.sort(matched, function(a, b) return a.name < b.name end)
+    end
     local count = 0
-    for _, child in ipairs(ScrollingFrame:GetChildren()) do
-        if child:IsA("Frame") then
-            child:Destroy()
+    for _, data in ipairs(matched) do
+        count = count + 1
+        makeScriptCard(data, count)
+    end
+    ScriptScroll.CanvasSize = UDim2.new(0, 0, 0, count * 86 + 20)
+    if query then
+        CountLabel.Text = "Search: \"" .. searchQuery .. "\" - " .. count .. " results"
+    else
+        CountLabel.Text = "Showing " .. count .. " scripts in " .. tabName
+    end
+end
+
+local function updateTabCounters()
+    for name, button in pairs(tabButtons) do
+        local counter = button:FindFirstChild("Counter")
+        if counter then
+            local key = string.lower(name)
+            local count = 0
+            if key == "favorite" then
+                for _, data in ipairs(ScriptData) do if isFavorite(data.name) then count = count + 1 end end
+            elseif key == "leaderboard" then count = #StaffList
+            elseif key == "history" then count = #History
+            elseif key == "settings" or key == "info" then counter.Text = ""
+            else
+                for _, data in ipairs(ScriptData) do if data.type == key then count = count + 1 end end
+            end
+            if key ~= "settings" and key ~= "info" then counter.Text = tostring(count) end
         end
     end
-    
-    for _, data in ipairs(scriptData) do
-        if data.type == targetType then
-            count = count + 1
-            createScriptCard(data, count)
-        end
-    end
-    
-    ScrollingFrame.CanvasSize = UDim2.new(0, 0, 0, count * 74)
 end
 
 local function updateTabVisuals(selectedName)
-    for name, btn in pairs(tabButtons) do
+    for name, button in pairs(tabButtons) do
         if name == selectedName then
-            TweenService:Create(btn, TFast, {BackgroundColor3 = C.Yellow}):Play()
-            TweenService:Create(btn, TFast, {TextColor3 = Color3.fromRGB(12, 12, 16)}):Play()
+            TweenService:Create(button, FastTween, {BackgroundColor3 = Colors.yellow, TextColor3 = Color3.fromRGB(12, 12, 16)}):Play()
         else
-            TweenService:Create(btn, TFast, {BackgroundColor3 = C.TabInactive}):Play()
-            TweenService:Create(btn, TFast, {TextColor3 = C.TabText}):Play()
+            TweenService:Create(button, FastTween, {BackgroundColor3 = Colors.tabInactive, TextColor3 = Colors.tabText}):Play()
         end
     end
 end
 
-for name, btn in pairs(tabButtons) do
-    btn.MouseButton1Click:Connect(function()
+SearchBox:GetPropertyChangedSignal("Text"):Connect(function()
+    filterScripts(currentTab, SearchBox.Text)
+end)
+
+SortButton.MouseButton1Click:Connect(function()
+    playSound("click")
+    if currentSort == "az" then currentSort = "rating" else currentSort = "az" end
+    SortButton.Text = currentSort == "az" and "A-Z" or "RATING"
+    filterScripts(currentTab, SearchBox.Text)
+end)
+
+for name, button in pairs(tabButtons) do
+    button.MouseButton1Click:Connect(function()
+        playSound("tabSwap")
         currentTab = name
+        SearchBox.Text = ""
         updateTabVisuals(name)
-        filterScripts(name)
+        filterScripts(name, "")
     end)
 end
 
-updateTabVisuals("KEYLESS")
-filterScripts("KEYLESS")
+local FloatGui = Instance.new("ScreenGui", ScreenGui.Parent)
+FloatGui.Name = "LionHubFloat"
+FloatGui.ResetOnSpawn = false
+FloatGui.DisplayOrder = 998
+FloatGui.IgnoreGuiInset = true
+
+local FloatButton = Instance.new("TextButton", FloatGui)
+FloatButton.AnchorPoint = Vector2.new(0.5, 0.5)
+FloatButton.Position = UDim2.new(Settings.floatX or 0.92, 0, Settings.floatY or 0.9, 0)
+FloatButton.Size = UDim2.new(0, 50, 0, 50)
+FloatButton.BackgroundColor3 = Colors.background
+FloatButton.BackgroundTransparency = 0.1
+FloatButton.AutoButtonColor = false
+FloatButton.Text = "L"
+FloatButton.TextColor3 = Colors.yellow
+FloatButton.Font = Enum.Font.GothamBlack
+FloatButton.TextSize = 24
+FloatButton.Visible = false
+FloatButton.ZIndex = 500
+addCorner(FloatButton, 25)
+
+local floatStroke = addStroke(FloatButton, 2, Colors.yellow)
+local floatGradient = addGradient(floatStroke, {
+    ColorSequenceKeypoint.new(0, Colors.yellow),
+    ColorSequenceKeypoint.new(0.5, Colors.white),
+    ColorSequenceKeypoint.new(1, Colors.yellow)
+})
+
+RunService.RenderStepped:Connect(function(dt)
+    if Settings.performance then return end
+    floatGradient.Rotation = (floatGradient.Rotation + 90 * dt) % 360
+end)
+
+local floatDragging, floatDragStart, floatStartPos, floatMoved
+
+FloatButton.InputBegan:Connect(function(input)
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        floatDragging = true
+        floatMoved = false
+        floatDragStart = input.Position
+        floatStartPos = FloatButton.Position
+    end
+end)
+
+FloatButton.InputChanged:Connect(function(input)
+    if floatDragging and (input.UserInputType == Enum.UserInputType.MouseMovement or input.UserInputType == Enum.UserInputType.Touch) then
+        local delta = input.Position - floatDragStart
+        if math.abs(delta.X) > 5 or math.abs(delta.Y) > 5 then floatMoved = true end
+        FloatButton.Position = UDim2.new(floatStartPos.X.Scale, floatStartPos.X.Offset + delta.X, floatStartPos.Y.Scale, floatStartPos.Y.Offset + delta.Y)
+    end
+end)
+
+UserInput.InputEnded:Connect(function(input)
+    if not floatDragging then return end
+    if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
+        floatDragging = false
+        if floatMoved then
+            local camera = workspace.CurrentCamera
+            local viewport = camera and camera.ViewportSize or Vector2.new(1920, 1080)
+            local pos = FloatButton.AbsolutePosition + FloatButton.AbsoluteSize / 2
+            local snapX = pos.X < viewport.X / 2 and 0.08 or 0.92
+            local snapY = pos.Y < viewport.Y / 2 and 0.1 or 0.9
+            TweenService:Create(FloatButton, SmoothTween, {Position = UDim2.new(snapX, 0, snapY, 0)}):Play()
+            Settings.floatX = snapX
+            Settings.floatY = snapY
+            saveJson("LionHub_Settings.json", Settings)
+        end
+    end
+end)
+
+FloatButton.MouseButton1Click:Connect(function()
+    if floatMoved then return end
+    playSound("click")
+    restoreUI()
+end)
+
+task.spawn(function()
+    while FloatGui.Parent do
+        if FloatButton.Visible and not Settings.performance and not floatDragging then
+            TweenService:Create(FloatButton, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Size = UDim2.new(0, 58, 0, 58)}):Play()
+            task.wait(1.2)
+            TweenService:Create(FloatButton, TweenInfo.new(1.2, Enum.EasingStyle.Sine, Enum.EasingDirection.InOut), {Size = UDim2.new(0, 50, 0, 50)}):Play()
+            task.wait(1.2)
+        else
+            task.wait(0.5)
+        end
+    end
+end)
+
+local function closeUI()
+    stopLofi()
+    TweenService:Create(MainFrame, TweenInfo.new(0.25, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1, Size = UDim2.new(0, WINDOW_W - 40, 0, WINDOW_H - 40)}):Play()
+    task.wait(0.26)
+    ScreenGui:Destroy()
+    FloatGui:Destroy()
+end
+
+local function minimizeUI()
+    TweenService:Create(MainFrame, TweenInfo.new(0.22, Enum.EasingStyle.Quad, Enum.EasingDirection.In), {BackgroundTransparency = 1, Size = UDim2.new(0, WINDOW_W - 60, 0, WINDOW_H - 60)}):Play()
+    task.wait(0.23)
+    MainFrame.Visible = false
+    FloatButton.Visible = true
+    stopLofi()
+end
+
+function restoreUI()
+    FloatButton.Visible = false
+    MainFrame.Size = UDim2.new(0, WINDOW_W - 60, 0, WINDOW_H - 60)
+    MainFrame.BackgroundTransparency = 1
+    MainFrame.Visible = true
+    TweenService:Create(MainFrame, SmoothTween, {Size = UDim2.new(0, WINDOW_W, 0, WINDOW_H), BackgroundTransparency = 0.08}):Play()
+    startLofi()
+end
+
+CloseButton.MouseButton1Click:Connect(function() playSound("click") closeUI() end)
+MinimizeButton.MouseButton1Click:Connect(function() playSound("click") minimizeUI() end)
+
+task.spawn(function()
+    local lastTime, frames = os.clock(), 0
+    RunService.RenderStepped:Connect(function()
+        frames = frames + 1
+        local now = os.clock()
+        if now - lastTime >= 1 then
+            StatsLabel.Text = string.format("Scripts: %d | Fps: %d", #ScriptData, frames)
+            frames = 0
+            lastTime = now
+        end
+    end)
+end)
+
+UserInput.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if input.KeyCode == Enum.KeyCode.RightShift then
+        if MainFrame.Visible then minimizeUI() else restoreUI() end
+    end
+end)
+
+updateTabCounters()
+updateTabVisuals("FAVORITE")
+filterScripts("FAVORITE", "")
+startLofi()
+
+print("[LION HUB] " .. VERSION .. " loaded - " .. #ScriptData .. " scripts")
