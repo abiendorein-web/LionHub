@@ -7,7 +7,7 @@ local UserInput = game:GetService("UserInputService")
 local HttpService = game:GetService("HttpService")
 local SoundService = game:GetService("SoundService")
 local LocalPlayer = Players.LocalPlayer
-local VERSION = "8.1"
+local VERSION = "8.2"
 
 local SoundIds = {
     click = "rbxassetid://6895079853",
@@ -81,8 +81,7 @@ local Settings = loadJson("LionHub_Settings.json", {
     performance = false,
     floatX = 0.92,
     floatY = 0.9,
-    tipsOn = true,
-    motionBlur = true
+    tipsOn = true
 })
 
 Settings.lofiOn = true
@@ -209,26 +208,6 @@ local CONTENT_W = WINDOW_W - CONTENT_X - PADDING
 local BODY_Y = HEADER_HEIGHT + PADDING
 local BODY_H = WINDOW_H - BODY_Y - PADDING
 
-local blurHolder = Instance.new("Frame", ScreenGui)
-blurHolder.Size = UDim2.new(1,0,1,0)
-blurHolder.BackgroundTransparency = 1
-blurHolder.ZIndex = 9
-blurHolder.Visible = false
-
-local ghostFrames = {}
-for i = 1, 2 do
-    local ghost = Instance.new("Frame", blurHolder)
-    ghost.AnchorPoint = Vector2.new(0.5, 0.5)
-    ghost.Position = UDim2.new(0.5, 0, 0.5, 0)
-    ghost.Size = UDim2.new(0, WINDOW_W, 0, WINDOW_H)
-    ghost.BackgroundColor3 = Colors.yellow
-    ghost.BackgroundTransparency = 0.86 + i * 0.02
-    ghost.BorderSizePixel = 0
-    ghost.ZIndex = 9 - i
-    addCorner(ghost, 16)
-    table.insert(ghostFrames, ghost)
-end
-
 local MainFrame = Instance.new("Frame", ScreenGui)
 MainFrame.AnchorPoint = Vector2.new(0.5, 0.5)
 MainFrame.Position = UDim2.new(0.5, 0, 0.5, 0)
@@ -241,7 +220,8 @@ MainFrame.ZIndex = 10
 addCorner(MainFrame, 16)
 TweenService:Create(MainFrame, SmoothTween, {BackgroundTransparency = 0.08}):Play()
 
-local outerGlow = addStroke(MainFrame, 5, Colors.white)
+local outerGlow = addStroke(MainFrame, 6, Colors.white)
+local midGlow = addStroke(MainFrame, 4, Colors.white)
 local innerGlow = addStroke(MainFrame, 2, Colors.white)
 local outerGradient = addGradient(outerGlow, {
     ColorSequenceKeypoint.new(0, Colors.yellow),
@@ -250,18 +230,25 @@ local outerGradient = addGradient(outerGlow, {
     ColorSequenceKeypoint.new(0.75, Colors.white),
     ColorSequenceKeypoint.new(1, Colors.yellow)
 })
-local innerGradient = addGradient(innerGlow, {
+local midGradient = addGradient(midGlow, {
     ColorSequenceKeypoint.new(0, Colors.white),
     ColorSequenceKeypoint.new(0.5, Colors.yellow),
     ColorSequenceKeypoint.new(1, Colors.white)
 })
+local innerGradient = addGradient(innerGlow, {
+    ColorSequenceKeypoint.new(0, Colors.yellow),
+    ColorSequenceKeypoint.new(0.5, Colors.white),
+    ColorSequenceKeypoint.new(1, Colors.yellow)
+})
 
 RunService.RenderStepped:Connect(function(dt)
     if Settings.performance or not MainFrame.Parent then return end
-    outerGradient.Rotation = (outerGradient.Rotation + 140 * dt) % 360
-    innerGradient.Rotation = (innerGradient.Rotation - 90 * dt) % 360
-    outerGlow.Transparency = 0.3 + (math.sin(tick() * 2) + 1) * 0.2
-    innerGlow.Transparency = 0.1 + (math.cos(tick() * 2.5) + 1) * 0.15
+    outerGradient.Rotation = (outerGradient.Rotation + 180 * dt) % 360
+    midGradient.Rotation = (midGradient.Rotation - 140 * dt) % 360
+    innerGradient.Rotation = (innerGradient.Rotation + 100 * dt) % 360
+    outerGlow.Transparency = 0.15 + (math.sin(tick() * 2.5) + 1) * 0.15
+    midGlow.Transparency = 0.05 + (math.cos(tick() * 3) + 1) * 0.1
+    innerGlow.Transparency = 0.0 + (math.sin(tick() * 3.5) + 1) * 0.08
 end)
 
 local starHolder = Instance.new("Frame", MainFrame)
@@ -272,25 +259,39 @@ starHolder.ZIndex = 11
 addCorner(starHolder, 16)
 
 task.spawn(function()
-    for i = 1, 35 do
+    for i = 1, 45 do
         local dot = Instance.new("Frame", starHolder)
         local size = math.random(1, 2)
         dot.Size = UDim2.new(0, size, 0, size)
         dot.Position = UDim2.new(math.random(), 0, math.random(), 0)
         dot.BackgroundColor3 = Colors.white
-        dot.BackgroundTransparency = 0.55
+        dot.BackgroundTransparency = 0.5
         dot.BorderSizePixel = 0
         dot.ZIndex = 11
         addCorner(dot, 99)
+        task.spawn(function()
+            while dot.Parent do
+                if Settings.performance then
+                    task.wait(2)
+                else
+                    local baseTrans = 0.3 + math.random() * 0.3
+                    dot.BackgroundTransparency = baseTrans
+                    task.wait(math.random(15, 40) / 10)
+                    if not dot.Parent then break end
+                    TweenService:Create(dot, TweenInfo.new(1.5), {BackgroundTransparency = baseTrans + 0.3}):Play()
+                    task.wait(1.5)
+                end
+            end
+        end)
     end
 end)
 
 task.spawn(function()
     while ScreenGui.Parent do
         if Settings.backgroundOn ~= false and not Settings.performance then
-            local isBig = math.random() < 0.15
-            local trailLength = isBig and math.random(140, 220) or math.random(60, 120)
-            local thickness = isBig and math.random(3, 4) or math.random(1, 2)
+            local isBig = math.random() < 0.18
+            local trailLength = isBig and math.random(180, 280) or math.random(80, 150)
+            local thickness = isBig and math.random(4, 5) or math.random(1, 2)
             local star = Instance.new("Frame", starHolder)
             star.Size = UDim2.new(0, trailLength, 0, thickness)
             star.Rotation = 35
@@ -300,49 +301,54 @@ task.spawn(function()
             elseif tintChance < 0.4 then starColor = Color3.fromRGB(255, 240, 180) end
             star.BackgroundColor3 = starColor
             star.BorderSizePixel = 0
+            star.BackgroundTransparency = 1
             star.ZIndex = 12
             addCorner(star, 99)
             local head = Instance.new("Frame", star)
             head.AnchorPoint = Vector2.new(1, 0.5)
             head.Position = UDim2.new(1, 0, 0.5, 0)
-            head.Size = UDim2.new(0, thickness + 4, 0, thickness + 4)
+            head.Size = UDim2.new(0, thickness + 5, 0, thickness + 5)
             head.BackgroundColor3 = Colors.white
             head.BorderSizePixel = 0
+            head.BackgroundTransparency = 1
             head.ZIndex = 13
             addCorner(head, 99)
             local headGlow = Instance.new("Frame", head)
             headGlow.AnchorPoint = Vector2.new(0.5, 0.5)
             headGlow.Position = UDim2.new(0.5, 0, 0.5, 0)
-            headGlow.Size = UDim2.new(2.5, 0, 2.5, 0)
+            headGlow.Size = UDim2.new(3, 0, 3, 0)
             headGlow.BackgroundColor3 = starColor
-            headGlow.BackgroundTransparency = 0.5
+            headGlow.BackgroundTransparency = 0.4
             headGlow.BorderSizePixel = 0
             headGlow.ZIndex = 12
             addCorner(headGlow, 99)
             local trailGradient = addGradient(star, {
                 ColorSequenceKeypoint.new(0, starColor),
-                ColorSequenceKeypoint.new(0.5, starColor),
+                ColorSequenceKeypoint.new(0.4, starColor),
                 ColorSequenceKeypoint.new(1, Colors.white)
             })
             trailGradient.Transparency = NumberSequence.new({
                 NumberSequenceKeypoint.new(0, 1),
-                NumberSequenceKeypoint.new(0.3, 0.7),
-                NumberSequenceKeypoint.new(0.75, 0.2),
+                NumberSequenceKeypoint.new(0.25, 0.7),
+                NumberSequenceKeypoint.new(0.7, 0.15),
                 NumberSequenceKeypoint.new(1, 0)
             })
-            local startX = math.random(-150, WINDOW_W)
-            local startY = math.random(-80, 80)
+            local startX = math.random(-200, WINDOW_W)
+            local startY = math.random(-100, 100)
             star.Position = UDim2.new(0, startX, 0, startY)
-            local duration = isBig and math.random(18, 26) / 10 or math.random(9, 16) / 10
-            local distance = isBig and 400 or 250
+            local duration = isBig and math.random(25, 35) / 10 or math.random(12, 20) / 10
+            local distance = isBig and 500 or 300
+            TweenService:Create(star, TweenInfo.new(0.3), {BackgroundTransparency = 0}):Play()
+            TweenService:Create(head, TweenInfo.new(0.3), {BackgroundTransparency = 0}):Play()
             local tween = TweenService:Create(star, TweenInfo.new(duration, Enum.EasingStyle.Linear), {
                 Position = UDim2.new(0, startX + distance, 0, startY + distance * 0.8),
                 BackgroundTransparency = 1
             })
             tween:Play()
+            TweenService:Create(head, TweenInfo.new(duration, Enum.EasingStyle.Linear), {BackgroundTransparency = 1}):Play()
             tween.Completed:Connect(function() star:Destroy() end)
         end
-        task.wait(math.random(20, 70) / 100)
+        task.wait(math.random(40, 120) / 100)
     end
 end)
 
@@ -361,13 +367,9 @@ TopBar.InputBegan:Connect(function(input)
         isDragging = true
         dragStart = input.Position
         dragStartPos = MainFrame.Position
-        if Settings.motionBlur ~= false and not Settings.performance then
-            blurHolder.Visible = true
-        end
         input.Changed:Connect(function()
             if input.UserInputState == Enum.UserInputState.End then
                 isDragging = false
-                blurHolder.Visible = false
             end
         end)
     end
@@ -382,17 +384,7 @@ end)
 UserInput.InputChanged:Connect(function(input)
     if input == dragInput and isDragging then
         local delta = input.Position - dragStart
-        local newPos = UDim2.new(dragStartPos.X.Scale, dragStartPos.X.Offset + delta.X, dragStartPos.Y.Scale, dragStartPos.Y.Offset + delta.Y)
-        MainFrame.Position = newPos
-        if Settings.motionBlur ~= false and not Settings.performance then
-            for index, ghost in ipairs(ghostFrames) do
-                local mult = index * 0.4
-                local offsetX = (input.Position.X - dragStart.X) * 0.02 * mult
-                local offsetY = (input.Position.Y - dragStart.Y) * 0.02 * mult
-                ghost.Position = UDim2.new(newPos.X.Scale, newPos.X.Offset - offsetX, newPos.Y.Scale, newPos.Y.Offset - offsetY)
-                ghost.BackgroundTransparency = 0.82 + index * 0.04
-            end
-        end
+        MainFrame.Position = UDim2.new(dragStartPos.X.Scale, dragStartPos.X.Offset + delta.X, dragStartPos.Y.Scale, dragStartPos.Y.Offset + delta.Y)
     end
 end)
 
@@ -456,6 +448,13 @@ CloseButton.TextSize = 11
 CloseButton.ZIndex = 18
 addCorner(CloseButton, 6)
 
+CloseButton.MouseEnter:Connect(function()
+    TweenService:Create(CloseButton, FastTween, {BackgroundColor3 = Colors.red}):Play()
+end)
+CloseButton.MouseLeave:Connect(function()
+    TweenService:Create(CloseButton, FastTween, {BackgroundColor3 = Colors.control}):Play()
+end)
+
 local MinimizeButton = Instance.new("TextButton", TopBar)
 MinimizeButton.AnchorPoint = Vector2.new(1, 0.5)
 MinimizeButton.Position = UDim2.new(1, -36, 0.5, 0)
@@ -468,6 +467,13 @@ MinimizeButton.Font = Enum.Font.GothamBold
 MinimizeButton.TextSize = 13
 MinimizeButton.ZIndex = 18
 addCorner(MinimizeButton, 6)
+
+MinimizeButton.MouseEnter:Connect(function()
+    TweenService:Create(MinimizeButton, FastTween, {BackgroundColor3 = Colors.yellow, TextColor3 = Color3.fromRGB(12,12,16)}):Play()
+end)
+MinimizeButton.MouseLeave:Connect(function()
+    TweenService:Create(MinimizeButton, FastTween, {BackgroundColor3 = Colors.control, TextColor3 = Colors.white}):Play()
+end)
 
 local TipBar = Instance.new("Frame", MainFrame)
 TipBar.AnchorPoint = Vector2.new(0.5, 1)
@@ -503,14 +509,14 @@ TipLabel.TextTruncate = Enum.TextTruncate.AtEnd
 TipLabel.ZIndex = 19
 
 local TipList = {
-    "Do you know Lion Hub was created because the Owner was bored?",
+    "Do you know Lion Hub was created because the owner was bored?",
     "Every script in Lion Hub is free - no keys, no paywalls.",
     "Type keyless in the search box to see only free scripts.",
     "Type keyed to see scripts that need a key.",
     "Type fav to see only your saved favorites.",
     "RightShift toggles the hub instantly on desktop.",
     "Tap the floating L ball to restore a minimized hub.",
-    "The floating L ball is draggable - move it anywhere.",
+    "The floating L ball stays where you last dragged it.",
     "Favorites save across sessions - they never disappear.",
     "Lo-fi mode plays chill beats while you grind.",
     "You can minimize the hub instead of closing it.",
@@ -600,7 +606,8 @@ local TabStructure = {
     {tab = "STEAL A BRAINROT"}, {tab = "STEAL AN EGG"}, {tab = "MM2"},
     {tab = "RIDE A PET"}, {tab = "JUMP FOR ANIMALS"}, {tab = "BLOX FRUITS"},
     {tab = "BEDWARS"}, {tab = "ANIMAL HOSPITAL"}, {tab = "GROW A GARDEN 2"},
-    {tab = "99 NIGHTS"}, {tab = "SLAYERS 2"}, {tab = "RIVALS"}, {tab = "Sell Lemons"},
+    {tab = "99 NIGHTS"}, {tab = "SLAYERS 2"}, {tab = "RIVALS"},
+    {tab = "SELL LEMONS"},
     {tab = "ARSENAL"}, {tab = "FORSAKEN"}, {tab = "DA HOOD"},
     {tab = "BLADE BALL"}, {tab = "PET SIM 99"}, {tab = "ADOPT ME"},
     {tab = "JAILBREAK"}, {tab = "TOWER DEFENSE"},
@@ -640,6 +647,17 @@ local function makeTabButton(name)
     local hoverStroke = addStroke(button, 1.5, Colors.yellow)
     hoverStroke.Transparency = 1
 
+    local hoverBar = Instance.new("Frame", button)
+    hoverBar.Size = UDim2.new(0, 2, 0.6, 0)
+    hoverBar.Position = UDim2.new(0, 2, 0.2, 0)
+    hoverBar.BackgroundColor3 = Colors.yellow
+    hoverBar.BackgroundTransparency = 1
+    hoverBar.BorderSizePixel = 0
+    hoverBar.ZIndex = 17
+    addCorner(hoverBar, 2)
+
+    local textOffset = Instance.new("UIPadding", button)
+
     local counter = Instance.new("TextLabel", button)
     counter.Name = "Counter"
     counter.AnchorPoint = Vector2.new(1, 0.5)
@@ -657,10 +675,14 @@ local function makeTabButton(name)
         if not Settings.performance then
             TweenService:Create(hoverStroke, FastTween, {Transparency = 0.3}):Play()
             TweenService:Create(button, FastTween, {BackgroundColor3 = Colors.controlHover}):Play()
+            TweenService:Create(hoverBar, FastTween, {BackgroundTransparency = 0}):Play()
+            textOffset.PaddingLeft = UDim.new(0, 12)
         end
     end)
     button.MouseLeave:Connect(function()
         TweenService:Create(hoverStroke, FastTween, {Transparency = 1}):Play()
+        TweenService:Create(hoverBar, FastTween, {BackgroundTransparency = 1}):Play()
+        textOffset.PaddingLeft = UDim.new(0, 0)
         if currentTab ~= name then
             TweenService:Create(button, FastTween, {BackgroundColor3 = Colors.tabInactive}):Play()
         end
@@ -834,15 +856,15 @@ ScriptListLayout.Padding = UDim.new(0, 8)
 ScriptListLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
 local ToastHolder = Instance.new("Frame", ScreenGui)
-ToastHolder.AnchorPoint = Vector2.new(1, 1)
-ToastHolder.Position = UDim2.new(1, -14, 1, -50)
+ToastHolder.AnchorPoint = Vector2.new(1, 0)
+ToastHolder.Position = UDim2.new(1, -14, 0, 50)
 ToastHolder.Size = UDim2.new(0, 260, 1, -140)
 ToastHolder.BackgroundTransparency = 1
 ToastHolder.ZIndex = 99
 
 local ToastLayout = Instance.new("UIListLayout", ToastHolder)
 ToastLayout.Padding = UDim.new(0, 6)
-ToastLayout.VerticalAlignment = Enum.VerticalAlignment.Bottom
+ToastLayout.VerticalAlignment = Enum.VerticalAlignment.Top
 ToastLayout.HorizontalAlignment = Enum.HorizontalAlignment.Right
 ToastLayout.SortOrder = Enum.SortOrder.LayoutOrder
 
@@ -918,12 +940,12 @@ end
 local StaffList = {
     {
         username = "Rene_AiTest",
-        role = "ASPEC",
+        role = "Head Coder Developer",
         roleColor = Colors.gold,
         iconId = "rbxassetid://139747252343501",
         profile = "https://www.roblox.com/users/profile?username=Rene_AiTest",
         bio = "Creator of Lion Hub.",
-        contributions = {"Lion Hub v1.0 to v8.1", "All script integrations", "UI/UX design", "Community management"}
+        contributions = {"Lion Hub v1.0 to v8.2", "All script integrations", "UI/UX design", "Community management"}
     }
 }
 
@@ -987,7 +1009,6 @@ local ScriptList = {
 {"AJJANS HUB SAE","steal an egg","Pet spawner + mutation selector","Ajjan",5,"https://api.luarmor.net/files/v4/loaders/359e97f8618e9008afe5f496184ebb7c.lua","keyed"},
 {"SPEED X HUB SAE","steal an egg","Auto steal + more","AhmadV99",4,"https://raw.githubusercontent.com/AhmadV99/Speed-Hub-X/main/Speed%20Hub%20X.lua","keyless"},
 {"OUROBOROS HUB SAE","steal an egg","Auto steal + treadmill","Ouroboros",5,"https://raw.githubusercontent.com/joustingmatch/Ouroboros/main/loader.lua","keyless"},
-{"HOSHI HUB","sell lemons","Keyless sell lemons script","Fluxyyy333",5,"https://raw.githubusercontent.com/Fluxyyy333/HoshiOnTop/main/loader.lua","keyless"},
 {"LENNON HUB V4","steal an egg","NEW V4 SO OP","Lennon",5,"https://api.obscuravm.com/scripts/7432000531066434716","keyless"},
 {"ANTI HIT","steal an egg","Anti hit protection","Community",4,"https://pastefy.app/0GR9gni1/raw","keyless"},
 {"FABLE HUB","mm2","Auto farm + ESP + silent aim","Havickzi",5,"https://raw.githubusercontent.com/Havickzi/Rocket-script/refs/heads/main/Fable_Hub.lua","keyless"},
@@ -1030,6 +1051,7 @@ local ScriptList = {
 {"PRS HUB","rivals","Knife aura + ragebot","PRS",4,"https://rawscripts.net/raw/RIVALS-PRS-HUB-Knife-Aura-Ragebot-and-More-229585","keyed"},
 {"VELTRAX HUB","rivals","Veltrax rivals hub","Veltrax",4,"https://rawscripts.net/raw/RIVALS-Veltrax-Hub-229556","keyed"},
 {"REEFHUB","rivals","Aimbot + skin unlocker + ESP + autoplay","Reef",4,"https://rawscripts.net/raw/RIVALS-ReefHub-Aimbot-Skin-Unlocker-ESP-Auto-Play-and-More!-229547","keyed"},
+{"HOSHI HUB","sell lemons","Keyless sell lemons script","Fluxyyy333",5,"https://raw.githubusercontent.com/Fluxyyy333/HoshiOnTop/main/loader.lua","keyless"},
 {"SPEED HUB ARS","arsenal","Speed hub arsenal","AhmadV99",4,"https://raw.githubusercontent.com/AhmadV99/Speed-Hub-X/main/Speed%20Hub%20X.lua","keyless"},
 {"NAIKO HUB","forsaken","Forsaken executor","Naiko",4,"https://naikoexploit.vercel.app/ForsakenPlus","keyed"},
 {"RISE HUB BB","blade ball","Blade Ball executor","Joshhhie",5,"https://raw.githubusercontent.com/joshhhie/rise/refs/heads/main/loader.lua","keyless"},
@@ -1113,12 +1135,12 @@ local function makeScriptCard(data, order)
     end)
 
     card.MouseEnter:Connect(function()
-        TweenService:Create(card, FastTween, {Size = UDim2.new(1, -1, 0, 78), Position = UDim2.new(0, -2, 0, -1)}):Play()
-        TweenService:Create(cardStroke, FastTween, {Transparency = 0.05}):Play()
+        TweenService:Create(card, FastTween, {Size = UDim2.new(1, -1, 0, 80), Position = UDim2.new(0, -3, 0, -2)}):Play()
+        TweenService:Create(cardStroke, FastTween, {Transparency = 0, Thickness = 2}):Play()
     end)
     card.MouseLeave:Connect(function()
         TweenService:Create(card, FastTween, {Size = UDim2.new(1, -5, 0, 76), Position = UDim2.new(0, 0, 0, 0)}):Play()
-        TweenService:Create(cardStroke, FastTween, {Transparency = 0.2}):Play()
+        TweenService:Create(cardStroke, FastTween, {Transparency = 0.2, Thickness = 1}):Play()
     end)
 
     local starButton = Instance.new("TextButton", card)
@@ -1261,6 +1283,13 @@ local function makeScriptCard(data, order)
     executeButton.TextSize = 10
     executeButton.ZIndex = 18
     addCorner(executeButton, 8)
+
+    executeButton.MouseEnter:Connect(function()
+        TweenService:Create(executeButton, FastTween, {Size = UDim2.new(0, 88, 0, 36), TextSize = 11}):Play()
+    end)
+    executeButton.MouseLeave:Connect(function()
+        TweenService:Create(executeButton, FastTween, {Size = UDim2.new(0, 82, 0, 32), TextSize = 10}):Play()
+    end)
 
     executeButton.MouseButton1Click:Connect(function()
         if ActiveScripts[data.name] then return end
@@ -1474,11 +1503,6 @@ local function makeSettings()
         Settings.tipsOn = not (Settings.tipsOn ~= false)
         saveJson("LionHub_Settings.json", Settings)
         showToast("Tips: " .. (Settings.tipsOn and "ON" or "OFF"), Colors.green, "?")
-    end)
-    settingOption("Motion Blur: " .. (Settings.motionBlur ~= false and "ON" or "OFF"), "Ghost trail on drag", function()
-        Settings.motionBlur = not (Settings.motionBlur ~= false)
-        saveJson("LionHub_Settings.json", Settings)
-        showToast("Blur: " .. (Settings.motionBlur and "ON" or "OFF"), Colors.green, "B")
     end)
     settingOption("Performance: " .. (Settings.performance and "ON" or "OFF"), "Disables animations", function()
         Settings.performance = not Settings.performance
@@ -1762,14 +1786,9 @@ UserInput.InputEnded:Connect(function(input)
     if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
         floatDragging = false
         if floatMoved then
-            local camera = workspace.CurrentCamera
-            local viewport = camera and camera.ViewportSize or Vector2.new(1920, 1080)
-            local pos = FloatButton.AbsolutePosition + FloatButton.AbsoluteSize / 2
-            local snapX = pos.X < viewport.X / 2 and 0.08 or 0.92
-            local snapY = pos.Y < viewport.Y / 2 and 0.1 or 0.9
-            TweenService:Create(FloatButton, SmoothTween, {Position = UDim2.new(snapX, 0, snapY, 0)}):Play()
-            Settings.floatX = snapX
-            Settings.floatY = snapY
+            local pos = FloatButton.Position
+            Settings.floatX = pos.X.Scale
+            Settings.floatY = pos.Y.Scale
             saveJson("LionHub_Settings.json", Settings)
         end
     end
