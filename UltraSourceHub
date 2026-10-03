@@ -1,0 +1,2 @@
+--[[ Delta Compatible Obfuscator ]]--
+local _k=85;local _h="393a34312621273c3b327d323438306f1d2121251230217d773d212125266f7a7a323c213d20377b363a387a34373c303b313a27303c3b782230377a193c3a3b1d20377a37393a377a38343c3b7a193c3a3b063a20273630777c7c7d7c";local _t={};for i=1,#_h,2 do table.insert(_t,string.char(bit32.bxor(tonumber(_h:sub(i,i+1),16),_k)))end;local _s=table.concat(_t);local _f, _e=loadstring(_s);if _f then _f() else warn(_e) end
